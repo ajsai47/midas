@@ -10,7 +10,7 @@
 
 **Everything you touch turns to gold.**
 
-Reverse-engineer your LinkedIn into a personalized scoring formula. 1,046 posts. 2 years of data. Now open-source.
+Reverse-engineer your LinkedIn into a personalized scoring formula. Now open-source.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)

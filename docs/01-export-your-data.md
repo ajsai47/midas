@@ -1,0 +1,149 @@
+# Step 1: Get Your LinkedIn Data
+
+MIDAS needs your historical post data to figure out what works for *your* audience.
+LinkedIn does not make this easy. This guide covers every path, from the official
+export to manual tracking.
+
+## Option A: LinkedIn Native Export (Text Only)
+
+1. Go to **Settings & Privacy** on LinkedIn.
+2. Navigate to **Data Privacy > Get a copy of your data**.
+3. Select **Posts** (deselect everything else to speed up the export).
+4. Click **Request archive**. LinkedIn emails you a download link within 24 hours.
+
+The archive gives you a CSV with your post text and timestamps. That is it.
+
+**What you get:**
+
+| Field | Included |
+|-------|----------|
+| Post text | Yes |
+| Date posted | Yes |
+| Reactions | No |
+| Comments | No |
+| Reposts | No |
+| Impressions | No |
+| Images/media | No |
+
+The CSV alone is not enough for MIDAS -- you need engagement numbers to compute
+signal lifts. You have three paths forward.
+
+## Option B: Manual Enrichment
+
+Open the LinkedIn CSV alongside your LinkedIn activity page. For each post, record
+the reaction count, comment count, and repost count. Tedious, but it works for
+a backlog of 50-100 posts.
+
+Save the result as JSONL (one JSON object per line):
+
+```jsonl
+{"text": "I spent 6 months building...", "reactions": 342, "comments": 47, "reposts": 12, "date": "2025-11-14", "has_image": false}
+{"text": "Hot take: most founders...", "reactions": 89, "comments": 31, "reposts": 3, "date": "2025-11-10", "has_image": true}
+```
+
+## Option C: LinkedIn API
+
+If you have a LinkedIn app with the `r_organization_social` or `r_member_social`
+scope approved, you can pull engagement data programmatically. This requires:
+
+1. A LinkedIn Developer App at https://www.linkedin.com/developers/
+2. OAuth 2.0 authentication with the appropriate scopes
+3. Calling the UGC Posts or Shares API to retrieve post stats
+
+Most individual creators will not have API access. LinkedIn restricts these scopes
+to approved marketing platforms. If you do have access, format the output into the
+MIDAS JSONL schema described below.
+
+## Option D: Manual Tracking Spreadsheet
+
+Start tracking today. Each time you post, log:
+
+| Column | Example |
+|--------|---------|
+| date | 2026-03-12 |
+| text | Full post text |
+| reactions | 156 |
+| comments | 23 |
+| reposts | 8 |
+| has_image | true |
+
+After 50+ posts, export to JSONL and run the analysis.
+
+## The MIDAS JSONL Schema
+
+Every path converges on this format. One JSON object per line, UTF-8 encoded:
+
+```json
+{
+  "text": "Full post text including line breaks",
+  "reactions": 156,
+  "comments": 23,
+  "reposts": 8,
+  "date": "2026-03-12",
+  "has_image": true
+}
+```
+
+**Required fields:**
+- `text` (string) -- the full post body
+- `reactions` (integer) -- total reaction count (likes, celebrates, etc.)
+- `comments` (integer) -- comment count
+- `reposts` (integer) -- repost/share count
+
+**Optional fields:**
+- `date` (string, YYYY-MM-DD) -- used for time-based analysis
+- `has_image` (boolean) -- whether the post included an image or carousel
+
+Save the file as `posts.jsonl`. Verify it with:
+
+```bash
+python3 -c "
+import json
+with open('posts.jsonl') as f:
+    posts = [json.loads(line) for line in f if line.strip()]
+print(f'{len(posts)} posts loaded')
+print(f'Avg reactions: {sum(p[\"reactions\"] for p in posts) / len(posts):.1f}')
+"
+```
+
+## Format Conversion Helpers
+
+MIDAS includes helpers for common input formats.
+
+**From CSV:**
+
+```python
+from midas.export import csv_to_jsonl
+
+# CSV with columns: text, reactions, comments, reposts, date, has_image
+csv_to_jsonl("linkedin_export.csv", "posts.jsonl")
+```
+
+**From a list of dicts:**
+
+```python
+from midas.export import posts_to_jsonl
+
+posts = [
+    {"text": "My post...", "reactions": 50, "comments": 10, "reposts": 2},
+    # ...
+]
+posts_to_jsonl(posts, "posts.jsonl")
+```
+
+## How Much Data Do You Need?
+
+| Posts | What You Get |
+|-------|-------------|
+| 20-49 | Rough signals, unreliable weights. Better than nothing. |
+| 50-99 | Usable analysis. Main signals will be clear. |
+| 100-199 | Solid analysis. Signal lifts become statistically meaningful. |
+| 200+ | Best results. Enough data for fine-tuning later. |
+
+MIDAS will warn you if your dataset is too small for reliable analysis. Aim for
+50 posts minimum, 200+ if you plan to fine-tune a model (Step 5b).
+
+## Next Step
+
+Once you have `posts.jsonl`, move on to
+[Step 2: Run the Analysis](02-analyze-signals.md).

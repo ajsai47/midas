@@ -1,33 +1,41 @@
-# MIDAS
+
+```
+ ███╗   ███╗ ██╗ ██████╗   █████╗  ███████╗
+ ████╗ ████║ ██║ ██╔══██╗ ██╔══██╗ ██╔════╝
+ ██╔████╔██║ ██║ ██║  ██║ ███████║ ███████╗
+ ██║╚██╔╝██║ ██║ ██║  ██║ ██╔══██║ ╚════██║
+ ██║ ╚═╝ ██║ ██║ ██████╔╝ ██║  ██║ ███████║
+ ╚═╝     ╚═╝ ╚═╝ ╚═════╝  ╚═╝  ╚═╝ ╚══════╝
+```
 
 **Everything you touch turns to gold.**
 
-MIDAS is an open-source framework for reverse-engineering your LinkedIn performance data into a personalized scoring formula and AI-powered post optimization.
-
-Built from 1,046 posts over 2 years. Battle-tested. Now open-source.
+Reverse-engineer your LinkedIn into a personalized scoring formula. 1,046 posts. 2 years of data. Now open-source.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 
 ---
 
-## Why MIDAS?
+## The Problem
 
-Generic "LinkedIn tips" don't work because **your audience is unique**. What drives engagement for a founder in Portland is different from an engineer in SF or a recruiter in NYC.
+Generic LinkedIn tips don't work. Your audience is unique. What goes viral for a founder in Portland is invisible to an engineer in SF.
 
-MIDAS takes YOUR data and extracts YOUR formula:
+## The Fix
 
 ```
 Your posts + engagement data
         ↓
-  Signal analysis (what patterns correlate with high engagement?)
+  Statistical signal analysis
         ↓
-  Personalized scoring config (YAML)
+  Personalized scoring formula (YAML)
         ↓
-  Score drafts before publishing / Generate optimized posts with AI
+  Score before you post / Generate with AI
         ↓
-  Track edits → close the feedback loop → improve over time
+  Track edits → feedback loop → compound
 ```
+
+---
 
 ## Quickstart
 
@@ -35,193 +43,179 @@ Your posts + engagement data
 pip install midas-linkedin
 ```
 
-### 1. Analyze your data
-
+**Step 1 — Analyze your data**
 ```bash
-# Your data: JSONL with {text, reactions, comments, reposts, date}
-midas analyze my_posts.jsonl --output my_config.yaml
+midas analyze posts.jsonl -o my_config.yaml
 ```
 
-This analyzes every post, computes signal lifts, and generates a scoring config with weights calibrated to YOUR audience.
-
-### 2. Score a post
-
+**Step 2 — Score a draft**
 ```bash
-midas score "I just built something incredible..."
+midas score "I spent 6 months building something nobody asked for..."
 ```
 
 ```
-  Score: 485 — HIGH PERFORMER
+  Score: 485  VIRAL CANDIDATE
 
-  Signals:
-    +300  cta_comment
-    +140  personal_anecdote
-    +100  uses_arrows
+  Signals
+  ────────────────────────────
+  +300  cta_comment
+  +140  personal_anecdote
+  +100  uses_arrows
 
-  Penalties:
-    -55   has_hashtag
+  Penalties
+  ────────────────────────────
+  -55   has_hashtag
 
-  Quick wins:
-    → Shorten your hook to under 50 characters
-    → Add specific numbers for credibility
+  Quick wins
+  → Shorten your hook to under 50 characters
+  → Add specific numbers for credibility
 ```
 
-### 3. Generate with AI
-
+**Step 3 — Generate with AI**
 ```bash
 export ANTHROPIC_API_KEY=sk-...
-midas draft "my experience building AI agents from scratch"
+midas draft "lessons from building AI agents for 2 years"
 ```
 
-MIDAS generates a system prompt from your config, creates multiple drafts, scores each one, and shows you the best.
-
-### 4. Close the loop
-
+**Step 4 — Close the loop**
 ```bash
 midas feedback --original draft.txt --edited final.txt
 midas feedback --stats
 ```
 
-Track what you change, learn your editing patterns, export to DPO format for fine-tuning.
+---
 
 ## How It Works
 
-### The Scoring Engine
+### Signals + Penalties = Your Formula
 
-Every post is evaluated against **signals** (positive patterns) and **penalties** (anti-patterns). Each has a weight derived from your data:
+Every post is scored against **signals** (patterns that predict engagement) and **penalties** (patterns that kill it). Weights come from your data — not opinions.
 
 ```yaml
 signals:
   - name: hook_personal_i
-    weight: 90                    # Engagement lift when present
-    scope: hook                   # Only checks the first line
-    regex: "^I[' ]"              # Starts with "I " or "I'"
+    weight: 90
+    scope: hook
+    regex: "^I[' ]"
 
   - name: cta_comment
     weight: 300
-    scope: close                  # Only checks last 3 lines
+    scope: close
     keywords: ["comment"]
 
 penalties:
   - name: has_hashtag
-    weight: 55                    # Gets subtracted
+    weight: 55
     regex: "#\\w+"
 ```
 
-Weights come from **statistical lift**: `mean_engagement_with_signal / mean_engagement_without`. A signal with 2x lift and 50 average reactions might get a weight of 100.
+Weights = **statistical lift** × baseline engagement. A signal with 2x lift means posts with that pattern get 2x the engagement.
 
-### Two Paths to AI-Powered Drafting
+### Two Paths
 
-| | Path A: LLM API | Path B: Fine-tuning |
+| | LLM API | Fine-tuning |
 |---|---|---|
-| **Setup** | API key only | GPU + training pipeline |
-| **How** | System prompt from your config | SFT → DPO on your posts |
-| **Data needed** | 50+ posts | 200+ posts |
+| **Setup** | API key | GPU + training |
+| **How** | System prompt from config | SFT → DPO on your posts |
+| **Data** | 50+ posts | 200+ posts |
 | **Quality** | Good | Better |
-| **Cost** | Per-request API cost | One-time training cost |
 | **Best for** | Getting started | Power users |
+
+---
 
 ## Architecture
 
 ```
 midas/
-├── config.py       # YAML config loader (signals, penalties, tiers)
-├── scorer.py       # Scoring engine — config-driven, no hardcoded weights
-├── analyze.py      # Signal extraction from raw post data
-├── export.py       # LinkedIn data export helpers
-├── draft.py        # LLM-powered drafting (Claude/GPT/local)
-├── feedback.py     # Edit logging + DPO data generation
-└── cli.py          # CLI interface
+├── config.py       Config loader — signals, penalties, tiers
+├── scorer.py       Scoring engine — config-driven, zero hardcoded weights
+├── analyze.py      Signal extraction — lift computation from raw data
+├── export.py       Data helpers — LinkedIn CSV, Apify JSON, JSONL
+├── draft.py        LLM drafting — Claude, GPT, or local models
+├── feedback.py     Edit tracking — DPO export for fine-tuning
+└── cli.py          CLI — analyze, score, draft, rewrite, feedback
 
-training/           # Optional fine-tuning pipeline
-├── prepare_sft.py  # Convert posts → SFT data
-├── prepare_dpo.py  # Create preference pairs
-├── train_sft.py    # SFT with HuggingFace + TRL
-└── train_dpo.py    # DPO training
+training/
+├── prepare_sft.py  Posts → supervised fine-tuning data
+├── prepare_dpo.py  Engagement pairs → preference data
+├── train_sft.py    SFT with HuggingFace + TRL + LoRA
+└── train_dpo.py    DPO training
 ```
 
-## Documentation
+---
 
-| Guide | What you'll learn |
-|-------|-------------------|
-| [01 — Export Your Data](docs/01-export-your-data.md) | Get your LinkedIn posts into MIDAS format |
-| [02 — Analyze Signals](docs/02-analyze-signals.md) | Extract what drives YOUR engagement |
-| [03 — Build Your Formula](docs/03-build-your-formula.md) | Customize your scoring config |
-| [04 — Score & Optimize](docs/04-score-and-optimize.md) | Score posts before publishing |
-| [05 — LLM Integration](docs/05-llm-integration.md) | Generate posts with Claude/GPT |
-| [06 — Fine-Tuning](docs/06-fine-tuning.md) | Train your own model (optional) |
-| [07 — Feedback Loop](docs/07-feedback-loop.md) | Close the loop with edit tracking |
+## Docs
 
-## Installation
+| Step | Guide | What you'll learn |
+|------|-------|-------------------|
+| 1 | [Export Your Data](docs/01-export-your-data.md) | Get posts into MIDAS format |
+| 2 | [Analyze Signals](docs/02-analyze-signals.md) | Extract what drives YOUR engagement |
+| 3 | [Build Your Formula](docs/03-build-your-formula.md) | Customize scoring config |
+| 4 | [Score & Optimize](docs/04-score-and-optimize.md) | Score before publishing |
+| 5a | [LLM Integration](docs/05-llm-integration.md) | Generate with Claude/GPT |
+| 5b | [Fine-Tuning](docs/06-fine-tuning.md) | Train your own model |
+| 6 | [Feedback Loop](docs/07-feedback-loop.md) | Close the loop |
+
+---
+
+## Install
 
 ```bash
-# Core (scoring + analysis + CLI)
-pip install midas-linkedin
-
-# With LLM support (Claude/GPT drafting)
-pip install "midas-linkedin[llm]"
-
-# With training support (fine-tuning pipeline)
-pip install "midas-linkedin[training]"
-
-# Everything
-pip install "midas-linkedin[all]"
+pip install midas-linkedin              # Core — scoring + analysis + CLI
+pip install "midas-linkedin[llm]"       # + Claude/GPT drafting
+pip install "midas-linkedin[training]"  # + fine-tuning pipeline
+pip install "midas-linkedin[all]"       # Everything
 ```
 
 ## Python API
 
 ```python
+from midas.analyze import analyze_file, export_config
 from midas.config import load_config
 from midas.scorer import score
-from midas.analyze import analyze_file, export_config
 from midas.draft import draft
-from midas.feedback import log_edit, get_stats
 
-# Analyze your data
-result = analyze_file("my_posts.jsonl")
-export_config(result, "my_config.yaml")
+# Analyze → config → score → draft
+result = analyze_file("posts.jsonl")
+export_config(result, "config.yaml")
 
-# Score a post
-config = load_config("my_config.yaml")
-result = score("Your post text here...", config)
-print(f"{result.score:.0f} — {result.tier}")
+config = load_config("config.yaml")
+print(score("Your post here...", config).tier)
 
-# Generate with AI
 drafts = draft("topic", config, provider="anthropic")
-print(drafts[0].text)  # Best-scoring draft
 ```
 
 ## Data Format
 
-MIDAS uses a simple JSONL format. One post per line:
+One post per line. JSONL.
 
 ```json
-{
-  "text": "Your post text here...",
-  "reactions": 47,
-  "comments": 23,
-  "reposts": 8,
-  "date": "2026-02-15",
-  "has_image": false
-}
+{"text": "Your post...", "reactions": 47, "comments": 23, "reposts": 8, "date": "2026-02-15", "has_image": false}
 ```
 
-See [01 — Export Your Data](docs/01-export-your-data.md) for how to get your data into this format.
+Get your data via [Apify scraper](docs/01-export-your-data.md) (recommended), LinkedIn export, or manual tracking.
 
-## Requirements
+---
 
-- Python 3.10+
-- For LLM drafting: `anthropic` or `openai` SDK + API key
-- For fine-tuning: GPU with 24GB+ VRAM (or cloud GPU)
+## How Much Data?
+
+| Posts | Quality |
+|-------|---------|
+| 20-49 | Rough signals. Better than nothing. |
+| 50-99 | Usable. Main signals clear. |
+| 100-199 | Solid. Statistically meaningful lifts. |
+| 200+ | Best. Enough for fine-tuning. |
+
+---
 
 ## Contributing
 
-PRs welcome. The most impactful contributions:
+PRs welcome.
 
-1. **New signal detectors** — found a pattern that predicts engagement? Add it
-2. **Export helpers** — parsers for different data sources
-3. **Provider integrations** — support for more LLM providers
-4. **Documentation** — tutorials, case studies, guides
+1. **Signal detectors** — found a pattern that predicts engagement? Add it
+2. **Export helpers** — parsers for new data sources
+3. **LLM providers** — support for more models
+4. **Case studies** — share your results
 
 ## License
 

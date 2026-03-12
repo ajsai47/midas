@@ -207,6 +207,114 @@ def _to_bool(val: Any) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Apify LinkedIn Post Scraper parser
+# ---------------------------------------------------------------------------
+
+def parse_apify_posts(path: str) -> list[dict]:
+    """Parse output from the Apify LinkedIn Post Search Scraper.
+
+    Supports the JSON dataset export from:
+    https://console.apify.com/actors/RE0MriXnFhR3IgVnJ/input
+
+    Handles the common Apify output field names:
+        text/postText/commentary -> text
+        numLikes/reactionCount/likesCount/totalReactionCount -> reactions
+        numComments/commentsCount -> comments
+        numShares/repostsCount/sharesCount -> reposts
+        postedAt/postedDate/publishedAt -> date
+        images/media/imageUrl -> has_image
+
+    Args:
+        path: Path to the Apify JSON export file (array of objects).
+
+    Returns:
+        List of post dicts in the standard MIDAS schema.
+    """
+    filepath = Path(path)
+    if not filepath.exists():
+        raise FileNotFoundError(f"Apify export file not found: {path}")
+
+    with open(filepath, encoding="utf-8") as f:
+        content = f.read().strip()
+
+    # Support both JSON array and JSONL formats
+    if content.startswith("["):
+        raw_posts = json.loads(content)
+    else:
+        raw_posts = [json.loads(line) for line in content.split("\n") if line.strip()]
+
+    posts: list[dict] = []
+    for raw in raw_posts:
+        text = (
+            raw.get("text")
+            or raw.get("postText")
+            or raw.get("commentary")
+            or raw.get("postContent")
+            or raw.get("content")
+            or ""
+        )
+        text = str(text).strip()
+        if not text:
+            continue
+
+        reactions = _first_int(raw, [
+            "numLikes", "reactionCount", "totalReactionCount",
+            "likesCount", "reactions", "likes",
+        ])
+
+        comments = _first_int(raw, [
+            "numComments", "commentsCount", "commentCount",
+            "comments", "comment_count",
+        ])
+
+        reposts = _first_int(raw, [
+            "numShares", "repostsCount", "sharesCount",
+            "shareCount", "reposts", "shares",
+        ])
+
+        date_val = (
+            raw.get("postedAt")
+            or raw.get("postedDate")
+            or raw.get("publishedAt")
+            or raw.get("date")
+            or raw.get("createdAt")
+            or ""
+        )
+        date_str = _normalize_date(date_val)
+
+        has_image = bool(
+            raw.get("images")
+            or raw.get("image")
+            or raw.get("imageUrl")
+            or raw.get("media")
+            or raw.get("mediaUrl")
+        )
+
+        posts.append({
+            "text": text,
+            "reactions": reactions,
+            "comments": comments,
+            "reposts": reposts,
+            "date": date_str,
+            "has_image": has_image,
+        })
+
+    return posts
+
+
+def _first_int(d: dict, keys: list[str]) -> int:
+    """Return the first non-None integer value found among the given keys."""
+    for key in keys:
+        val = d.get(key)
+        if val is not None:
+            try:
+                return int(val)
+            except (ValueError, TypeError):
+                continue
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # LinkedIn CSV export parser
 # ---------------------------------------------------------------------------
 

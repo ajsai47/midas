@@ -4,7 +4,36 @@ MIDAS needs your historical post data to figure out what works for *your* audien
 LinkedIn does not make this easy. This guide covers every path, from the official
 export to manual tracking.
 
-## Option A: LinkedIn Native Export (Text Only)
+## Option A: Apify LinkedIn Post Scraper (Recommended)
+
+The fastest way to get all your posts **with engagement data** is the
+[LinkedIn Post Search Scraper](https://console.apify.com/actors/RE0MriXnFhR3IgVnJ/input)
+on Apify. It scrapes your public posts and returns text, reactions, comments,
+reposts, images, and timestamps — everything MIDAS needs in one shot.
+
+**Setup:**
+
+1. Create a free [Apify account](https://apify.com) (comes with free monthly credits).
+2. Open the [LinkedIn Post Search Scraper](https://console.apify.com/actors/RE0MriXnFhR3IgVnJ/input).
+3. Enter your LinkedIn profile URL or search keywords for your posts.
+4. Run the actor and export results as JSON.
+
+**Convert to MIDAS format:**
+
+```python
+from midas.export import parse_apify_posts, save_jsonl
+
+# Download the Apify dataset as JSON and pass the file path
+posts = parse_apify_posts("apify_dataset.json")
+save_jsonl(posts, "posts.jsonl")
+print(f"Converted {len(posts)} posts")
+```
+
+The parser handles all common Apify output field names automatically. This is the
+recommended path because you get text + engagement in a single export, no manual
+enrichment needed.
+
+## Option B: LinkedIn Native Export (Text Only — No Engagement)
 
 1. Go to **Settings & Privacy** on LinkedIn.
 2. Navigate to **Data Privacy > Get a copy of your data**.
@@ -26,9 +55,9 @@ The archive gives you a CSV with your post text and timestamps. That is it.
 | Images/media | No |
 
 The CSV alone is not enough for MIDAS -- you need engagement numbers to compute
-signal lifts. You have three paths forward.
+signal lifts. You must manually enrich this data or use Option A instead.
 
-## Option B: Manual Enrichment
+## Option C: Manual Enrichment
 
 Open the LinkedIn CSV alongside your LinkedIn activity page. For each post, record
 the reaction count, comment count, and repost count. Tedious, but it works for
@@ -41,7 +70,7 @@ Save the result as JSONL (one JSON object per line):
 {"text": "Hot take: most founders...", "reactions": 89, "comments": 31, "reposts": 3, "date": "2025-11-10", "has_image": true}
 ```
 
-## Option C: LinkedIn API
+## Option D: LinkedIn API
 
 If you have a LinkedIn app with the `r_organization_social` or `r_member_social`
 scope approved, you can pull engagement data programmatically. This requires:
@@ -54,7 +83,7 @@ Most individual creators will not have API access. LinkedIn restricts these scop
 to approved marketing platforms. If you do have access, format the output into the
 MIDAS JSONL schema described below.
 
-## Option D: Manual Tracking Spreadsheet
+## Option E: Manual Tracking Spreadsheet
 
 Start tracking today. Each time you post, log:
 

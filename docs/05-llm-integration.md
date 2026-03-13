@@ -43,11 +43,11 @@ Options:
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--config` / `-c` | `midas_config.yaml` | Your scoring config |
-| `--provider` | `anthropic` | `anthropic`, `openai`, or `local` |
-| `--model` | Provider default | Model ID (e.g., `claude-sonnet-4-20250514`) |
+| `--provider` / `-p` | `anthropic` | `anthropic`, `openai`, or `local` |
+| `--api-key` | env var | API key (overrides env var) |
+| `--model` / `-m` | Provider default | Model ID (e.g., `claude-sonnet-4-20250514`) |
 | `--samples` / `-n` | `3` | Number of candidates to generate |
-| `--temperature` | `0.9` | Sampling temperature |
-| `--max-tokens` | `2000` | Max output tokens per sample |
+| `--temperature` / `-t` | `0.7` | Sampling temperature |
 
 Output:
 
@@ -79,6 +79,15 @@ Already have a draft? Let MIDAS optimize it:
 ```bash
 midas rewrite draft.txt --config my_config.yaml
 ```
+
+Options:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--config` / `-c` | `midas_config.yaml` | Your scoring config |
+| `--provider` / `-p` | `anthropic` | `anthropic`, `openai`, or `local` |
+| `--api-key` | env var | API key (overrides env var) |
+| `--model` / `-m` | Provider default | Model ID |
 
 This sends your draft to the LLM along with the scoring breakdown and asks it to
 improve the score by adding missing signals and removing penalties. The original
@@ -125,11 +134,8 @@ STRUCTURE:
 Write naturally. Do not force signals that do not fit the topic.
 ```
 
-You can inspect the generated prompt with:
-
-```bash
-midas prompt --config my_config.yaml
-```
+You can generate this prompt programmatically with `generate_system_prompt(config)`
+from `midas.draft` (see the Python API section below).
 
 ## Provider Options
 
@@ -179,32 +185,40 @@ Three samples is the sweet spot for most use cases.
 
 ```python
 from midas.config import load_config
-from midas.llm import generate_drafts, rewrite_draft
+from midas.draft import draft, rewrite, generate_system_prompt
 
 config = load_config("my_config.yaml")
 
+# Inspect the system prompt MIDAS builds from your config
+prompt = generate_system_prompt(config)
+print(prompt)
+
 # Generate new drafts
-results = generate_drafts(
+results = draft(
     topic="lessons from building an open-source project",
     config=config,
     provider="anthropic",
-    n_samples=3,
-    temperature=0.9,
+    num_samples=3,
+    temperature=0.7,
 )
 
-# results is a list of (text, ScoreResult) tuples, sorted by score descending
-best_text, best_score = results[0]
-print(best_text)
-print(best_score)
+# results is a list[DraftResult], sorted by score descending
+# DraftResult has: text, score_result, provider, model
+best = results[0]
+print(best.text)
+print(best.score_result)
 
 # Rewrite an existing draft
 original = open("draft.txt").read()
-rewritten, score_result = rewrite_draft(
-    text=original,
+result = rewrite(
+    draft_text=original,
     config=config,
     provider="anthropic",
+    temperature=0.5,
 )
-print(rewritten)
+# result is a DraftResult
+print(result.text)
+print(result.score_result)
 ```
 
 ## Tips

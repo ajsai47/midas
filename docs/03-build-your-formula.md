@@ -168,22 +168,27 @@ print(bool(re.search(pattern, text)))  # True
 
 ## Setting Tier Thresholds
 
-Tiers should reflect your actual engagement distribution. Run the scorer against
-your historical posts and look at the score distribution:
+Tiers should reflect your actual engagement distribution. Score your historical
+posts and look at the score distribution:
 
-```bash
-midas backtest posts.jsonl --config my_config.yaml
-```
+```python
+from midas.export import load_jsonl
+from midas.config import load_config
+from midas.scorer import score
+import statistics
 
-This outputs percentile breakdowns:
+config = load_config("my_config.yaml")
+posts = load_jsonl("posts.jsonl")
+scores = [score(p["text"], config).score for p in posts]
+scores.sort()
 
-```
-Score Distribution (187 posts):
-  p95:  920   → VIRAL CANDIDATE threshold
-  p85:  610   → HIGH PERFORMER threshold
-  p65:  340   → ABOVE AVERAGE threshold
-  p50:  180   → AVERAGE threshold
-  below p50   → BELOW AVERAGE
+n = len(scores)
+print(f"Score Distribution ({n} posts):")
+print(f"  p95:  {scores[int(n * 0.95)]:.0f}   → VIRAL CANDIDATE threshold")
+print(f"  p85:  {scores[int(n * 0.85)]:.0f}   → HIGH PERFORMER threshold")
+print(f"  p65:  {scores[int(n * 0.65)]:.0f}   → ABOVE AVERAGE threshold")
+print(f"  p50:  {scores[int(n * 0.50)]:.0f}   → AVERAGE threshold")
+print(f"  below p50   → BELOW AVERAGE")
 ```
 
 Set your tier thresholds to roughly match these percentiles so that tiers

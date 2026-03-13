@@ -13,7 +13,10 @@ midas score "I spent 6 months reverse-engineering LinkedIn.\n\nHere's what I fou
   --config my_config.yaml
 
 # Score from a file
-midas score draft.txt --config my_config.yaml
+midas score -f draft.txt --config my_config.yaml
+
+# Score from stdin
+cat draft.txt | midas score --config my_config.yaml
 ```
 
 **Output:**
@@ -85,55 +88,41 @@ Draft v3:  Score 700 (HIGH PERFORMER)
 Do not chase every signal. A post that awkwardly stuffs in every pattern will
 read like spam. Use the scorer as a checklist, not a straitjacket.
 
-## Backtesting Against Historical Posts
+## Validating Against Historical Posts
 
-Score your entire dataset to validate the config:
+Score your entire dataset with a script to validate the config:
 
-```bash
-midas backtest posts.jsonl --config my_config.yaml
+```python
+from midas.export import load_jsonl
+from midas.config import load_config
+from midas.scorer import score
+import statistics
+
+config = load_config("my_config.yaml")
+posts = load_jsonl("posts.jsonl")
+
+results = []
+for p in posts:
+    r = score(p["text"], config)
+    eng = p.get("reactions", 0) + p.get("comments", 0) * 2 + p.get("reposts", 0) * 3
+    results.append((r.score, eng, r.tier))
+
+# Check tier breakdown
+from collections import Counter, defaultdict
+tier_eng = defaultdict(list)
+for s, e, t in results:
+    tier_eng[t].append(e)
+
+print(f"Validation — {len(posts)} posts")
+print("=" * 40)
+for tier in ["VIRAL CANDIDATE", "HIGH PERFORMER", "ABOVE AVERAGE", "AVERAGE", "BELOW AVERAGE"]:
+    if tier in tier_eng:
+        engs = tier_eng[tier]
+        print(f"  {tier}: avg {statistics.mean(engs):.0f} engagement ({len(engs)} posts)")
 ```
 
-Output:
-
-```
-Backtest Results — 187 posts
-============================
-Correlation (score vs reactions): 0.72
-Mean score for top-25% posts:     680
-Mean score for bottom-25% posts:  140
-
-Tier Accuracy:
-  VIRAL CANDIDATE:  avg 234 reactions (12 posts)
-  HIGH PERFORMER:   avg 87 reactions  (28 posts)
-  ABOVE AVERAGE:    avg 41 reactions  (52 posts)
-  AVERAGE:          avg 19 reactions  (61 posts)
-  BELOW AVERAGE:    avg 8 reactions   (34 posts)
-```
-
-If the correlation is below 0.5, your config needs tuning. Go back to Step 3
-and adjust weights or add custom signals.
-
-## JSON Output
-
-For programmatic use, add `--json`:
-
-```bash
-midas score draft.txt --config my_config.yaml --json
-```
-
-```json
-{
-  "score": 620,
-  "tier": "HIGH PERFORMER",
-  "tier_description": "Top 15% — expect 30-50 reactions",
-  "signals": {"topic_primary": 200, "personal_anecdote": 140, "uses_arrows": 120},
-  "penalties": {"has_hashtag": -55},
-  "signal_total": 620,
-  "penalty_total": -55,
-  "suggestions": ["End with 'Comment [WORD]' to drive engagement"],
-  "stats": {"char_count": 1247, "line_count": 32, "word_count": 198}
-}
-```
+If the higher tiers do not correspond to higher actual engagement, your config
+needs tuning. Go back to Step 3 and adjust weights or add custom signals.
 
 ## Python API
 
@@ -179,7 +168,13 @@ else:
 ```bash
 #!/bin/bash
 # .git/hooks/pre-commit (for a content repo)
-SCORE=$(midas score "$1" --config my_config.yaml --json | python3 -c "import sys,json; print(json.load(sys.stdin)['score'])")
+SCORE=$(python3 -c "
+from midas.config import load_config
+from midas.scorer import score
+text = open('$1').read()
+cfg = load_config('my_config.yaml')
+print(int(score(text, cfg).score))
+")
 if [ "$SCORE" -lt 250 ]; then
   echo "MIDAS score $SCORE is below threshold (250). Revise before posting."
   exit 1

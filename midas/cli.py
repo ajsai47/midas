@@ -109,11 +109,66 @@ def score_cmd(text: str | None, file: str | None, config: str | None):
 
 
 @main.command()
+@click.option("--dir", "-d", default=".", help="Directory to initialize in")
+def init(dir: str):
+    """Set up MIDAS in your project — guided onboarding."""
+    import shutil
+
+    target = Path(dir)
+    target.mkdir(parents=True, exist_ok=True)
+
+    console.print(Panel(
+        "[bold]MIDAS[/bold] — Reverse-engineer your LinkedIn into a personalized scoring formula.",
+        border_style="yellow",
+    ))
+    console.print()
+
+    # Copy sample config if none exists
+    config_path = target / "midas_config.yaml"
+    sample_config = Path(__file__).parent.parent / "examples" / "sample_config.yaml"
+
+    if config_path.exists():
+        console.print(f"  [dim]Config already exists:[/dim] {config_path}")
+    elif sample_config.exists():
+        shutil.copy(sample_config, config_path)
+        console.print(f"  [green]Created[/green] {config_path} (sample config)")
+    else:
+        console.print("  [yellow]No sample config found. Run `midas analyze` to generate one.[/yellow]")
+
+    # Copy sample data if none exists
+    data_path = target / "posts.jsonl"
+    sample_data = Path(__file__).parent.parent / "examples" / "sample_data.jsonl"
+
+    if data_path.exists():
+        console.print(f"  [dim]Data already exists:[/dim] {data_path}")
+    elif sample_data.exists():
+        shutil.copy(sample_data, data_path)
+        console.print(f"  [green]Created[/green] {data_path} (10 sample posts)")
+
+    console.print()
+    console.print("[bold]Next steps:[/bold]")
+    console.print()
+    console.print("  [bold cyan]1.[/bold cyan] Try scoring with the sample config:")
+    console.print('     [dim]midas score "I spent 6 months building something nobody asked for..."[/dim]')
+    console.print()
+    console.print("  [bold cyan]2.[/bold cyan] Analyze the sample data to see signal detection:")
+    console.print("     [dim]midas analyze posts.jsonl -o midas_config.yaml[/dim]")
+    console.print()
+    console.print("  [bold cyan]3.[/bold cyan] Replace posts.jsonl with YOUR LinkedIn data:")
+    console.print("     [dim]See: https://github.com/ajsai47/midas/blob/main/docs/01-export-your-data.md[/dim]")
+    console.print()
+    console.print("  [bold cyan]4.[/bold cyan] Generate AI drafts (requires API key):")
+    console.print('     [dim]export ANTHROPIC_API_KEY=sk-...[/dim]')
+    console.print('     [dim]midas draft "your topic here"[/dim]')
+    console.print()
+
+
+@main.command()
 @click.argument("data_path", type=click.Path(exists=True))
 @click.option("--output", "-o", default="midas_config.yaml", help="Output config path")
 @click.option("--hook-max-chars", default=100, help="Max chars for hook detection")
-@click.option("--min-posts", default=10, help="Min posts with signal to include it")
-def analyze(data_path: str, output: str, hook_max_chars: int, min_posts: int):
+@click.option("--min-frequency", default=0.02, help="Min signal frequency to include (e.g. 0.05 = 5%)")
+def analyze(data_path: str, output: str, hook_max_chars: int, min_frequency: float):
     """Analyze your posts and generate a scoring config.
 
     DATA_PATH should be a JSONL file with your posts and engagement data.
@@ -122,11 +177,11 @@ def analyze(data_path: str, output: str, hook_max_chars: int, min_posts: int):
 
     console.print(f"[bold]Analyzing[/bold] {data_path}...")
 
-    result = analyze_file(data_path, hook_max_chars=hook_max_chars, min_posts=min_posts)
+    result = analyze_file(data_path, hook_max_chars=hook_max_chars, min_frequency=min_frequency)
 
     console.print(f"\n  Posts analyzed: [bold]{result.total_posts}[/bold]")
     console.print(f"  Signals found: [bold]{len(result.signals)}[/bold]")
-    console.print(f"  Penalties found: [bold]{len(result.penalties)}[/bold]")
+    console.print(f"  Anti-patterns found: [bold]{len(result.anti_patterns)}[/bold]")
 
     if result.signals:
         console.print("\n[bold]Top signals by lift:[/bold]")

@@ -139,25 +139,27 @@ print(f'Avg reactions: {sum(p[\"reactions\"] for p in posts) / len(posts):.1f}')
 
 MIDAS includes helpers for common input formats.
 
-**From CSV:**
+**From LinkedIn's native CSV export:**
 
 ```python
-from midas.export import csv_to_jsonl
+from midas.export import parse_linkedin_export, save_jsonl
 
-# CSV with columns: text, reactions, comments, reposts, date, has_image
-csv_to_jsonl("linkedin_export.csv", "posts.jsonl")
+# Parse the LinkedIn Shares CSV (text + dates only, no engagement)
+posts = parse_linkedin_export("Shares.csv")
+save_jsonl(posts, "posts.jsonl")
+# NOTE: engagement fields will be 0 — you must enrich manually
 ```
 
 **From a list of dicts:**
 
 ```python
-from midas.export import posts_to_jsonl
+from midas.export import save_jsonl
 
 posts = [
     {"text": "My post...", "reactions": 50, "comments": 10, "reposts": 2},
     # ...
 ]
-posts_to_jsonl(posts, "posts.jsonl")
+save_jsonl(posts, "posts.jsonl")
 ```
 
 ## How Much Data Do You Need?

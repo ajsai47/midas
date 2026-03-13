@@ -40,7 +40,7 @@ Your posts + engagement data
 ## Quickstart
 
 ```bash
-pip install midas-linkedin
+pip install git+https://github.com/ajsai47/midas.git
 ```
 
 **Step 1 — Analyze your data**
@@ -161,10 +161,14 @@ training/
 ## Install
 
 ```bash
-pip install midas-linkedin              # Core — scoring + analysis + CLI
-pip install "midas-linkedin[llm]"       # + Claude/GPT drafting
-pip install "midas-linkedin[training]"  # + fine-tuning pipeline
-pip install "midas-linkedin[all]"       # Everything
+# From GitHub (recommended for now)
+pip install git+https://github.com/ajsai47/midas.git                  # Core
+pip install "midas-linkedin[llm] @ git+https://github.com/ajsai47/midas.git"   # + Claude/GPT
+pip install "midas-linkedin[all] @ git+https://github.com/ajsai47/midas.git"   # Everything
+
+# From source
+git clone https://github.com/ajsai47/midas.git && cd midas
+pip install -e ".[all]"
 ```
 
 ## Python API

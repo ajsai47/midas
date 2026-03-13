@@ -23,12 +23,12 @@ def main():
 
     # ── Step 2: Analyze posts to derive a formula ──
     result = analyze_posts(posts)
-    print(f"Analysis complete: {len(result.signals)} signals, {len(result.penalties)} penalties\n")
+    print(f"Analysis complete: {len(result.signals)} signals, {len(result.anti_patterns)} anti-patterns\n")
 
     # Show top signals
     print("Top signals by engagement lift:")
     for s in result.signals[:5]:
-        print(f"  +{s['weight']:>4.0f}  {s['name']}  (lift: {s['lift']:.2f})")
+        print(f"  +{s.weight:>4.0f}  {s.name}  (lift: {s.lift:.2f})")
     print()
 
     # Save as config

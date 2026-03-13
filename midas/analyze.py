@@ -1,8 +1,10 @@
 """Signal analysis engine — derive a scoring formula from your post history.
 
 Given a JSONL file of posts with engagement metrics, this module computes the
-empirical lift of each candidate signal (engagement when present vs absent) and
-generates a MidasConfig with data-driven weights.
+empirical lift of each candidate signal (engagement when present vs absent),
+tests each signal for statistical significance (Mann-Whitney U), computes
+bootstrap confidence intervals, and applies Benjamini-Hochberg FDR correction
+to control for multiple comparisons.
 
 Usage:
     from midas.analyze import analyze_file, export_config
@@ -15,6 +17,8 @@ Usage:
 from __future__ import annotations
 
 import json
+import math
+import random
 import re
 import statistics
 from dataclasses import dataclass, field
@@ -219,6 +223,157 @@ def _build_candidates(hook_max_chars: int) -> list[_CandidateSignal]:
 
 
 # ---------------------------------------------------------------------------
+# Statistical tests (pure Python — no scipy dependency)
+# ---------------------------------------------------------------------------
+
+def _mann_whitney_u(
+    group_a: list[float],
+    group_b: list[float],
+) -> tuple[float, float]:
+    """Mann-Whitney U test for two independent samples.
+
+    Tests whether the distribution of group_a is stochastically greater than
+    group_b.  Uses the normal approximation for n >= 20, which is standard
+    in the literature.
+
+    Returns (U_statistic, p_value).  Two-sided test.
+    """
+    n1, n2 = len(group_a), len(group_b)
+    if n1 == 0 or n2 == 0:
+        return 0.0, 1.0
+
+    # Combine and rank
+    combined = [(v, 0) for v in group_a] + [(v, 1) for v in group_b]
+    combined.sort(key=lambda x: x[0])
+
+    # Assign ranks with tie handling (average ranks)
+    ranks: list[float] = [0.0] * len(combined)
+    i = 0
+    while i < len(combined):
+        j = i
+        while j < len(combined) and combined[j][0] == combined[i][0]:
+            j += 1
+        avg_rank = (i + 1 + j) / 2.0  # 1-indexed average
+        for k in range(i, j):
+            ranks[k] = avg_rank
+        i = j
+
+    # Sum of ranks for group_a
+    r1 = sum(ranks[k] for k in range(len(combined)) if combined[k][1] == 0)
+
+    u1 = r1 - n1 * (n1 + 1) / 2
+    u2 = n1 * n2 - u1
+    u = min(u1, u2)
+
+    # Normal approximation (valid for n >= 20)
+    mu = n1 * n2 / 2
+    # Tie correction for variance
+    n = n1 + n2
+    tie_correction = 0.0
+    i = 0
+    while i < len(combined):
+        j = i
+        while j < len(combined) and combined[j][0] == combined[i][0]:
+            j += 1
+        t = j - i
+        if t > 1:
+            tie_correction += (t ** 3 - t)
+        i = j
+
+    sigma_sq = (n1 * n2 / 12) * ((n + 1) - tie_correction / (n * (n - 1)))
+    if sigma_sq <= 0:
+        return u, 1.0
+
+    sigma = math.sqrt(sigma_sq)
+    z = abs(u - mu) / sigma
+
+    # Two-sided p-value from standard normal (approximation via error function)
+    p = 2 * (1 - _norm_cdf(z))
+    return u, p
+
+
+def _norm_cdf(z: float) -> float:
+    """Standard normal CDF approximation (Abramowitz & Stegun 7.1.26).
+
+    Maximum error: 1.5e-7.  Good enough for hypothesis testing.
+    """
+    # Handle negative z
+    if z < 0:
+        return 1 - _norm_cdf(-z)
+
+    t = 1.0 / (1.0 + 0.2316419 * z)
+    d = 0.3989422804014327  # 1/sqrt(2*pi)
+    p = d * math.exp(-z * z / 2) * (
+        t * (0.319381530 + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))))
+    )
+    return 1.0 - p
+
+
+def _bootstrap_ci(
+    group_a: list[float],
+    group_b: list[float],
+    *,
+    n_bootstraps: int = 2000,
+    confidence: float = 0.95,
+    seed: int = 42,
+) -> tuple[float, float]:
+    """Bootstrap confidence interval for the lift ratio (median_a / median_b).
+
+    Returns (lower_bound, upper_bound) for the lift.
+    """
+    rng = random.Random(seed)
+    lifts: list[float] = []
+
+    for _ in range(n_bootstraps):
+        sample_a = [rng.choice(group_a) for _ in range(len(group_a))]
+        sample_b = [rng.choice(group_b) for _ in range(len(group_b))]
+        med_a = statistics.median(sample_a)
+        med_b = statistics.median(sample_b)
+        if med_b > 0:
+            lifts.append(med_a / med_b)
+        elif med_a > 0:
+            lifts.append(2.0)
+        else:
+            lifts.append(1.0)
+
+    lifts.sort()
+    alpha = 1 - confidence
+    lo_idx = int(n_bootstraps * alpha / 2)
+    hi_idx = int(n_bootstraps * (1 - alpha / 2))
+    return lifts[lo_idx], lifts[min(hi_idx, len(lifts) - 1)]
+
+
+def _benjamini_hochberg(p_values: list[float], alpha: float = 0.05) -> list[bool]:
+    """Benjamini-Hochberg FDR correction for multiple comparisons.
+
+    Returns a list of booleans — True if the hypothesis is rejected
+    (i.e., the signal is statistically significant after correction).
+    """
+    n = len(p_values)
+    if n == 0:
+        return []
+
+    # Sort p-values with original indices
+    indexed = sorted(enumerate(p_values), key=lambda x: x[1])
+    rejected = [False] * n
+
+    # Find the largest k where p_(k) <= k/n * alpha
+    max_k = -1
+    for rank, (orig_idx, p) in enumerate(indexed, 1):
+        threshold = rank / n * alpha
+        if p <= threshold:
+            max_k = rank
+
+    # Reject all hypotheses with rank <= max_k
+    if max_k > 0:
+        for rank, (orig_idx, p) in enumerate(indexed, 1):
+            if rank <= max_k:
+                rejected[orig_idx] = True
+
+    return rejected
+
+
+# ---------------------------------------------------------------------------
 # Analysis result
 # ---------------------------------------------------------------------------
 
@@ -236,15 +391,26 @@ class SignalAnalysis:
     mean_engagement_present: float
     mean_engagement_absent: float
     is_anti_pattern: bool
+    # Statistical rigor fields
+    median_engagement_present: float = 0.0
+    median_engagement_absent: float = 0.0
+    median_lift: float = 1.0
+    p_value: float = 1.0
+    significant: bool = False  # After FDR correction
+    ci_lower: float = 0.0
+    ci_upper: float = 0.0
 
     def __str__(self) -> str:
         direction = "PENALTY" if self.is_anti_pattern else "SIGNAL"
+        sig_marker = "*" if self.significant else ""
+        p_str = f"p={self.p_value:.4f}" if self.p_value < 1.0 else "p=n/a"
+        ci_str = f"CI=[{self.ci_lower:.2f}, {self.ci_upper:.2f}]"
         return (
-            f"  {direction}: {self.name}\n"
-            f"    lift={self.lift:.2f}x  freq={self.frequency:.1%}  "
-            f"weight={self.weight:.0f}\n"
-            f"    present={self.count_present} (avg {self.mean_engagement_present:.1f})  "
-            f"absent={self.count_absent} (avg {self.mean_engagement_absent:.1f})"
+            f"  {direction}: {self.name}{sig_marker}\n"
+            f"    lift={self.median_lift:.2f}x  freq={self.frequency:.1%}  "
+            f"weight={self.weight:.0f}  {p_str}  {ci_str}\n"
+            f"    present={self.count_present} (med {self.median_engagement_present:.1f})  "
+            f"absent={self.count_absent} (med {self.median_engagement_absent:.1f})"
         )
 
 
@@ -260,22 +426,26 @@ class AnalysisResult:
     config: MidasConfig
 
     def __str__(self) -> str:
+        sig_count = sum(1 for s in self.signals if s.significant)
+        anti_sig = sum(1 for a in self.anti_patterns if a.significant)
         parts = [
             f"MIDAS Signal Analysis",
             f"{'=' * 50}",
             f"Posts analyzed: {self.total_posts}",
             f"Mean engagement: {self.mean_engagement:.1f}",
             f"Median engagement: {self.median_engagement:.1f}",
+            f"Signals tested: {len(self.signals) + len(self.anti_patterns)}  "
+            f"(significant after FDR: {sig_count + anti_sig})",
             "",
-            f"Positive signals ({len(self.signals)}):",
+            f"Positive signals ({len(self.signals)}, {sig_count} significant):",
         ]
-        for s in sorted(self.signals, key=lambda x: -x.lift):
+        for s in sorted(self.signals, key=lambda x: -x.median_lift):
             parts.append(str(s))
 
         if self.anti_patterns:
             parts.append("")
-            parts.append(f"Anti-patterns ({len(self.anti_patterns)}):")
-            for a in sorted(self.anti_patterns, key=lambda x: x.lift):
+            parts.append(f"Anti-patterns ({len(self.anti_patterns)}, {anti_sig} significant):")
+            for a in sorted(self.anti_patterns, key=lambda x: x.median_lift):
                 parts.append(str(a))
 
         return "\n".join(parts)
@@ -329,6 +499,9 @@ def analyze_posts(
     candidates = _build_candidates(hook_max_chars)
     signal_analyses: list[SignalAnalysis] = []
 
+    # Collect raw p-values for FDR correction later
+    raw_analyses: list[tuple[SignalAnalysis, list[float], list[float]]] = []
+
     for candidate in candidates:
         present_engs: list[float] = []
         absent_engs: list[float] = []
@@ -356,27 +529,48 @@ def analyze_posts(
         if frequency < min_frequency or frequency > 0.98:
             continue
 
+        # Compute both mean and median
         mean_present = statistics.mean(present_engs) if present_engs else 0
         mean_absent = statistics.mean(absent_engs) if absent_engs else 0
+        med_present = statistics.median(present_engs) if present_engs else 0
+        med_absent = statistics.median(absent_engs) if absent_engs else 0
 
-        # Compute lift: how much more engagement when present vs absent
-        if mean_absent > 0:
-            lift = mean_present / mean_absent
-        elif mean_present > 0:
-            lift = 2.0  # Present has engagement, absent has none
+        # Primary lift uses median (robust to outliers)
+        if med_absent > 0:
+            median_lift = med_present / med_absent
+        elif med_present > 0:
+            median_lift = 2.0
         else:
-            lift = 1.0  # Neither has engagement
+            median_lift = 1.0
 
-        # Weight is lift * 100, rounded to nearest 10
-        raw_weight = lift * 100
+        # Mean-based lift kept for backwards compatibility
+        if mean_absent > 0:
+            mean_lift = mean_present / mean_absent
+        elif mean_present > 0:
+            mean_lift = 2.0
+        else:
+            mean_lift = 1.0
+
+        # Mann-Whitney U test: is the engagement distribution significantly
+        # different when this signal is present vs absent?
+        _, p_value = _mann_whitney_u(present_engs, absent_engs)
+
+        # Bootstrap 95% CI for the median lift
+        if count_present >= 3 and count_absent >= 3:
+            ci_lo, ci_hi = _bootstrap_ci(present_engs, absent_engs)
+        else:
+            ci_lo, ci_hi = median_lift, median_lift  # Not enough data
+
+        # Weight is derived from median lift * 100, rounded to nearest 10
+        raw_weight = median_lift * 100
         weight = round(raw_weight / 10) * 10
 
-        is_anti = lift < 1.0
+        is_anti = median_lift < 1.0
 
-        signal_analyses.append(SignalAnalysis(
+        sa = SignalAnalysis(
             name=candidate.name,
             description=candidate.description,
-            lift=lift,
+            lift=mean_lift,
             frequency=frequency,
             weight=weight if not is_anti else -weight,
             count_present=count_present,
@@ -384,7 +578,22 @@ def analyze_posts(
             mean_engagement_present=mean_present,
             mean_engagement_absent=mean_absent,
             is_anti_pattern=is_anti,
-        ))
+            median_engagement_present=med_present,
+            median_engagement_absent=med_absent,
+            median_lift=median_lift,
+            p_value=p_value,
+            ci_lower=ci_lo,
+            ci_upper=ci_hi,
+        )
+        raw_analyses.append((sa, present_engs, absent_engs))
+
+    # Benjamini-Hochberg FDR correction across all tested signals
+    p_values = [sa.p_value for sa, _, _ in raw_analyses]
+    significant_mask = _benjamini_hochberg(p_values, alpha=0.05)
+
+    for i, (sa, _, _) in enumerate(raw_analyses):
+        sa.significant = significant_mask[i]
+        signal_analyses.append(sa)
 
     # Split into positive signals and anti-patterns
     positive = [s for s in signal_analyses if not s.is_anti_pattern]

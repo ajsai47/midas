@@ -179,23 +179,122 @@ def analyze(data_path: str, output: str, hook_max_chars: int, min_frequency: flo
 
     result = analyze_file(data_path, hook_max_chars=hook_max_chars, min_frequency=min_frequency)
 
+    sig_count = sum(1 for s in result.signals if s.significant)
+    anti_sig = sum(1 for a in result.anti_patterns if a.significant)
+
     console.print(f"\n  Posts analyzed: [bold]{result.total_posts}[/bold]")
-    console.print(f"  Signals found: [bold]{len(result.signals)}[/bold]")
-    console.print(f"  Anti-patterns found: [bold]{len(result.anti_patterns)}[/bold]")
+    console.print(f"  Signals found: [bold]{len(result.signals)}[/bold] ({sig_count} statistically significant)")
+    console.print(f"  Anti-patterns found: [bold]{len(result.anti_patterns)}[/bold] ({anti_sig} statistically significant)")
 
     if result.signals:
         console.print("\n[bold]Top signals by lift:[/bold]")
-        for s in result.signals[:10]:
-            console.print(f"  +{s.weight:.0f}  {s.name}  (lift: {s.lift:.2f}, freq: {s.frequency:.0%})")
+        for s in sorted(result.signals, key=lambda x: -x.median_lift)[:10]:
+            sig_marker = " [green]*[/green]" if s.significant else ""
+            p_str = f"p={s.p_value:.3f}" if s.p_value < 1.0 else ""
+            console.print(
+                f"  +{s.weight:.0f}  {s.name}  "
+                f"(lift: {s.median_lift:.2f}x, freq: {s.frequency:.0%}, "
+                f"CI: [{s.ci_lower:.2f}-{s.ci_upper:.2f}], {p_str}){sig_marker}"
+            )
 
     if result.anti_patterns:
         console.print("\n[bold]Anti-patterns (negative lift):[/bold]")
-        for p in result.anti_patterns[:5]:
-            console.print(f"  {p.weight:.0f}  {p.name}  (lift: {p.lift:.2f})")
+        for p in sorted(result.anti_patterns, key=lambda x: x.median_lift)[:5]:
+            sig_marker = " [green]*[/green]" if p.significant else ""
+            console.print(
+                f"  {p.weight:.0f}  {p.name}  "
+                f"(lift: {p.median_lift:.2f}x, p={p.p_value:.3f}){sig_marker}"
+            )
 
     export_config(result, output)
     console.print(f"\n[green]Config saved to {output}[/green]")
     console.print(f"  Edit the config to tune weights, then use `midas score` to test.")
+
+
+@main.command()
+@click.argument("data_path", type=click.Path(exists=True))
+@click.option("--config", "-c", type=click.Path(), help="Path to config YAML")
+@click.option("--holdout", "-k", type=int, default=0, help="Run k-fold holdout validation (e.g. --holdout 5)")
+@click.option("--min-frequency", default=0.02, help="Min signal frequency for holdout re-analysis")
+def validate(data_path: str, config: str | None, holdout: int, min_frequency: float):
+    """Validate your formula against actual engagement data.
+
+    Scores every post in DATA_PATH and measures how well MIDAS scores
+    predict actual engagement using Spearman rank correlation.
+
+    Use --holdout N for k-fold cross-validation (proves generalization).
+    """
+    from .validate import validate as validate_fn, holdout_validate
+    from .analyze import analyze_file
+
+    import json
+
+    # Load posts
+    posts: list[dict] = []
+    with open(data_path) as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                posts.append(json.loads(line))
+
+    if not posts:
+        console.print("[red]No posts found in data file.[/red]")
+        sys.exit(1)
+
+    console.print(f"[bold]Validating[/bold] against {len(posts)} posts...")
+
+    if holdout > 0:
+        # K-fold cross-validation
+        console.print(f"  Running {holdout}-fold holdout validation...\n")
+        cv_result = holdout_validate(posts, n_splits=holdout, min_frequency=min_frequency)
+
+        for i, fold in enumerate(cv_result.fold_results, 1):
+            sig = "[green]*[/green]" if fold.is_significant else ""
+            color = "green" if fold.spearman_rho > 0.3 else "yellow" if fold.spearman_rho > 0 else "red"
+            console.print(
+                f"  Fold {i}: rho=[{color}]{fold.spearman_rho:+.4f}[/{color}]  "
+                f"p={fold.spearman_p:.4f} {sig}  (n={fold.total_posts})"
+            )
+
+        console.print()
+        color = "green" if cv_result.mean_rho > 0.3 else "yellow" if cv_result.mean_rho > 0 else "red"
+        console.print(f"  Mean rho:  [{color}]{cv_result.mean_rho:+.4f}[/{color}] +/- {cv_result.std_rho:.4f}")
+
+        if cv_result.all_significant and cv_result.mean_rho > 0.3:
+            console.print("\n  [bold green]Your formula generalizes to unseen data.[/bold green]")
+        elif cv_result.mean_rho > 0:
+            console.print("\n  [yellow]Weak positive signal. Collect more data.[/yellow]")
+        else:
+            console.print("\n  [red]Formula does not generalize. Re-analyze with more data.[/red]")
+    else:
+        # Standard validation
+        cfg = _find_config(config)
+        result = validate_fn(posts, cfg)
+
+        color = "green" if result.spearman_rho > 0.3 else "yellow" if result.spearman_rho > 0 else "red"
+        console.print(f"\n  Spearman rho:  [{color}]{result.spearman_rho:+.4f}[/{color}]  ({result.correlation_strength})")
+        console.print(f"  p-value:       {result.spearman_p:.6f}  ({'[green]SIGNIFICANT[/green]' if result.is_significant else '[red]NOT SIGNIFICANT[/red]'})")
+
+        if result.tier_calibration:
+            console.print()
+            table = Table(title="Tier Calibration", show_header=True)
+            table.add_column("Tier")
+            table.add_column("Posts", justify="right")
+            table.add_column("Med. Engagement", justify="right")
+            table.add_column("Range", justify="right")
+            for tc in result.tier_calibration:
+                table.add_row(
+                    tc.tier_name,
+                    str(tc.count),
+                    f"{tc.actual_median_engagement:.0f}",
+                    f"{tc.engagement_range[0]:.0f}-{tc.engagement_range[1]:.0f}",
+                )
+            console.print(table)
+
+        if result.spearman_rho > 0 and result.is_significant:
+            console.print("\n  [green]Your formula predicts engagement.[/green]")
+        else:
+            console.print("\n  [yellow]Consider re-analyzing with more data for better predictions.[/yellow]")
 
 
 @main.command()
@@ -284,15 +383,35 @@ def feedback(original: str | None, edited: str | None, log: str, config: str | N
     if stats:
         s = get_stats(log)
         console.print(f"\n[bold]Feedback Stats[/bold] ({s.total_edits} edits)")
-        console.print(f"  Avg score improvement: [green]+{s.avg_score_improvement:.0f}[/green]")
+        console.print(f"  Avg score improvement: [green]{s.avg_score_improvement:+.0f}[/green]")
+        console.print(f"  Improvement rate: {s.improvement_rate:.0%}")
+
+        if s.streak > 0:
+            console.print(f"  Current streak: [green]{s.streak}[/green] consecutive improvements")
+        if s.best_streak > 1:
+            console.print(f"  Best streak: {s.best_streak}")
+        if s.skill_trend:
+            color = "green" if "improving" in s.skill_trend else "yellow" if "stable" in s.skill_trend else "dim"
+            console.print(f"  Skill trend: [{color}]{s.skill_trend}[/{color}]")
+
         if s.most_commonly_added:
-            console.print("  Most added signals:")
+            console.print("\n  [bold]Most added signals:[/bold]")
             for name, count in s.most_commonly_added[:5]:
                 console.print(f"    +{count}x  {name}")
         if s.most_commonly_removed:
-            console.print("  Most removed signals:")
+            console.print("  [bold]Most removed signals:[/bold]")
             for name, count in s.most_commonly_removed[:5]:
                 console.print(f"    -{count}x  {name}")
+
+        if s.signal_win_rates:
+            console.print("\n  [bold]Signal win rates:[/bold]")
+            for swr in s.signal_win_rates[:8]:
+                if swr.times_added > 0:
+                    color = "green" if swr.add_win_rate > 0.6 else "yellow" if swr.add_win_rate > 0.4 else "red"
+                    console.print(
+                        f"    + {swr.signal_name}: [{color}]{swr.add_win_rate:.0%}[/{color}] win rate "
+                        f"({swr.times_adding_improved}/{swr.times_added}), avg delta {swr.avg_delta_when_added:+.0f}"
+                    )
         return
 
     if export_dpo:

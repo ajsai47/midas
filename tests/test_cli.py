@@ -225,6 +225,39 @@ class TestFeedbackCommand:
         assert "Exported" in result.output
 
 
+class TestValidateCommand:
+    def test_validate_basic(self, runner, tmp_dir):
+        result = runner.invoke(main, [
+            "validate",
+            str(SAMPLE_DATA),
+            "--config", str(SAMPLE_CONFIG),
+        ])
+        assert result.exit_code == 0
+        assert "Spearman" in result.output or "Validating" in result.output
+
+    def test_validate_shows_correlation(self, runner, tmp_dir):
+        result = runner.invoke(main, [
+            "validate",
+            str(SAMPLE_DATA),
+            "--config", str(SAMPLE_CONFIG),
+        ])
+        assert result.exit_code == 0
+        # Should show either rho value or tier calibration
+        assert "rho" in result.output.lower() or "Tier" in result.output
+
+    def test_validate_nonexistent_file(self, runner):
+        result = runner.invoke(main, [
+            "validate",
+            "/nonexistent/data.jsonl",
+        ])
+        assert result.exit_code != 0
+
+    def test_validate_help(self, runner):
+        result = runner.invoke(main, ["validate", "--help"])
+        assert result.exit_code == 0
+        assert "Validate" in result.output or "validate" in result.output
+
+
 class TestVersionFlag:
     def test_version(self, runner):
         result = runner.invoke(main, ["--version"])

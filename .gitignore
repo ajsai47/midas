@@ -18,6 +18,7 @@ venv/
 runs/
 checkpoints/
 data/
+!midas/data/
 *.pt
 *.bin
 *.safetensors

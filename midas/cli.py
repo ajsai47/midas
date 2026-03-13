@@ -123,13 +123,23 @@ def init(dir: str):
     ))
     console.print()
 
+    # Locate bundled sample files (package data or dev examples/)
+    def _find_sample(name: str) -> Path | None:
+        pkg_data = Path(__file__).parent / "data" / name
+        if pkg_data.exists():
+            return pkg_data
+        dev_examples = Path(__file__).parent.parent / "examples" / name
+        if dev_examples.exists():
+            return dev_examples
+        return None
+
     # Copy sample config if none exists
     config_path = target / "midas_config.yaml"
-    sample_config = Path(__file__).parent.parent / "examples" / "sample_config.yaml"
+    sample_config = _find_sample("sample_config.yaml")
 
     if config_path.exists():
         console.print(f"  [dim]Config already exists:[/dim] {config_path}")
-    elif sample_config.exists():
+    elif sample_config:
         shutil.copy(sample_config, config_path)
         console.print(f"  [green]Created[/green] {config_path} (sample config)")
     else:
@@ -137,30 +147,38 @@ def init(dir: str):
 
     # Copy sample data if none exists
     data_path = target / "posts.jsonl"
-    sample_data = Path(__file__).parent.parent / "examples" / "sample_data.jsonl"
+    sample_data = _find_sample("sample_data.jsonl")
 
     if data_path.exists():
         console.print(f"  [dim]Data already exists:[/dim] {data_path}")
-    elif sample_data.exists():
+    elif sample_data:
         shutil.copy(sample_data, data_path)
         console.print(f"  [green]Created[/green] {data_path} (10 sample posts)")
 
     console.print()
     console.print("[bold]Next steps:[/bold]")
     console.print()
-    console.print("  [bold cyan]1.[/bold cyan] Try scoring with the sample config:")
-    console.print('     [dim]midas score "I spent 6 months building something nobody asked for..."[/dim]')
+    console.print("  [bold cyan]1.[/bold cyan] Get your LinkedIn data (you need posts + engagement numbers):")
+    console.print("     Use the [bold]Apify LinkedIn Post Scraper[/bold] (free tier available):")
+    console.print("     [dim]https://console.apify.com/actors/RE0MriXnFhR3IgVnJ/input[/dim]")
     console.print()
-    console.print("  [bold cyan]2.[/bold cyan] Analyze the sample data to see signal detection:")
+    console.print("     Then convert to MIDAS format:")
+    console.print('     [dim]python3 -c "from midas.export import parse_apify_posts, save_jsonl; save_jsonl(parse_apify_posts(\'apify_dataset.json\'), \'posts.jsonl\')"[/dim]')
+    console.print()
+    console.print("     [dim]Full guide: https://github.com/ajsai47/midas/blob/main/docs/01-export-your-data.md[/dim]")
+    console.print()
+    console.print("  [bold cyan]2.[/bold cyan] Analyze your posts to build your formula:")
     console.print("     [dim]midas analyze posts.jsonl -o midas_config.yaml[/dim]")
     console.print()
-    console.print("  [bold cyan]3.[/bold cyan] Replace posts.jsonl with YOUR LinkedIn data:")
-    console.print("     [dim]See: https://github.com/ajsai47/midas/blob/main/docs/01-export-your-data.md[/dim]")
+    console.print("  [bold cyan]3.[/bold cyan] Score a draft before publishing:")
+    console.print('     [dim]midas score "Your draft here..." --config midas_config.yaml[/dim]')
     console.print()
-    console.print("  [bold cyan]4.[/bold cyan] Generate AI drafts (requires API key):")
-    console.print('     [dim]export ANTHROPIC_API_KEY=sk-...[/dim]')
-    console.print('     [dim]midas draft "your topic here"[/dim]')
+    console.print("  [bold cyan]4.[/bold cyan] Validate that your formula predicts engagement:")
+    console.print("     [dim]midas validate posts.jsonl --config midas_config.yaml[/dim]")
     console.print()
+    if sample_config or config_path.exists():
+        console.print("  [dim]Tip: A sample config and data were created above — try steps 3-4 now to see it in action.[/dim]")
+        console.print()
 
 
 @main.command()

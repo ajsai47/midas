@@ -1,0 +1,165 @@
+# MIDAS — Sample Scoring Configuration
+#
+# This is a TEMPLATE with placeholder weights. Run `midas analyze` on YOUR
+# LinkedIn data to generate a config with weights calibrated to your audience.
+#
+# Weights represent the engagement lift (in arbitrary units) when a signal is
+# present vs absent. Higher weight = stronger predictor of engagement.
+
+name: sample
+description: Sample config — replace weights with your own via `midas analyze`
+
+# How many characters define the "hook" (first visible line before "see more")
+hook_max_chars: 100
+
+# How many lines from the end count as the "close"
+close_lines: 3
+
+# --- Positive Signals ---
+# Each signal has a detection method (regex, keywords, or field threshold)
+# and a weight representing its engagement lift.
+
+signals:
+  # Hook signals — what makes people click "see more"
+  - name: hook_short_teaser
+    weight: 40
+    description: Short punchy hook under 50 chars creates curiosity gap
+    scope: hook
+    field: hook_length
+    min_value: 0  # Special: triggers when hook_length < 50 (handled in scorer)
+
+  - name: hook_personal_i
+    weight: 90
+    description: Starting with "I" signals personal story — high engagement
+    scope: hook
+    regex: "^I[' ]"
+
+  - name: hook_exclamation
+    weight: 160
+    description: Emotional opener grabs attention
+    scope: hook
+    regex: "^(Wow|Well|Wait|Whoa|Holy)"
+
+  - name: hook_number
+    weight: 60
+    description: Numbers in hook promise specificity
+    scope: hook
+    regex: "^[\\d$]"
+
+  - name: hook_superlative
+    weight: 40
+    description: Superlatives create intrigue
+    scope: hook
+    keywords: ["most", "biggest", "first", "largest", "best", "worst"]
+
+  # Structure signals — formatting that drives engagement
+  - name: uses_arrows
+    weight: 120
+    description: Arrow formatting improves scannability
+    regex: "→"
+
+  - name: heavy_linebreaks
+    weight: 95
+    description: Heavy whitespace keeps readers scrolling
+    field: newline_count
+    min_value: 25
+
+  - name: has_pivot
+    weight: 50
+    description: Narrative pivot creates tension
+    keywords: ["but ", "however ", "here's the thing", "here's why"]
+
+  # Content signals — what topics/elements drive engagement
+  - name: personal_anecdote
+    weight: 140
+    description: Personal stories outperform information-only posts
+    keywords: ["i remember", "years ago", "back in", "my first", "when i"]
+
+  - name: has_data
+    weight: 20
+    description: Specific numbers add credibility
+    regex: "\\d+[%x]|\\$[\\d,]+|\\d+\\.\\d+"
+
+  - name: word_count_long
+    weight: 70
+    description: Longer posts tend to perform better on LinkedIn
+    field: char_count
+    min_value: 1000
+
+  # Topic signals — customize these for YOUR niche
+  - name: topic_primary
+    weight: 200
+    description: "Your primary topic — replace with YOUR top-performing topic"
+    keywords: ["REPLACE_WITH_YOUR_TOPIC"]
+
+  - name: topic_secondary
+    weight: 75
+    description: "Your secondary topic — replace with YOUR second topic"
+    keywords: ["REPLACE_WITH_YOUR_TOPIC"]
+
+  # CTA signals
+  - name: cta_comment
+    weight: 300
+    description: "Asking for comments in closing drives engagement"
+    scope: close
+    keywords: ["comment"]
+
+# --- Penalties ---
+# Signals that correlate with LOWER engagement. Weights are positive numbers
+# but get subtracted from the score.
+
+penalties:
+  - name: has_hashtag
+    weight: 55
+    description: Hashtags reduce engagement on LinkedIn
+    regex: "#\\w+"
+
+  - name: cta_newsletter
+    weight: 20
+    description: Newsletter CTAs feel transactional
+    scope: close
+    keywords: ["newsletter", "subscribe"]
+
+  - name: hook_question
+    weight: 30
+    description: Question hooks underperform declarative hooks
+    scope: hook
+    regex: "\\?$"
+
+# --- Score Tiers ---
+# Map raw scores to human-readable performance tiers.
+# Calibrate these based on your actual engagement data.
+
+tiers:
+  - name: "VIRAL CANDIDATE"
+    min_score: 800
+    description: "Top 5% — expect 50+ reactions"
+  - name: "HIGH PERFORMER"
+    min_score: 500
+    description: "Top 15% — expect 30-50 reactions"
+  - name: "ABOVE AVERAGE"
+    min_score: 250
+    description: "Top 35% — expect 15-30 reactions"
+  - name: "AVERAGE"
+    min_score: 100
+    description: "Median range — expect 10-15 reactions"
+  - name: "BELOW AVERAGE"
+    min_score: 0
+    description: "Below median — consider revising"
+
+# --- Quick-Win Suggestions ---
+# When a signal is missing, show this suggestion to the user.
+
+suggestions:
+  - signal: hook_short_teaser
+    message: "Shorten your hook to under 50 characters for a curiosity gap"
+  - signal: uses_arrows
+    message: "Use → arrows instead of bullets for better scannability"
+  - signal: has_pivot
+    message: "Add a narrative pivot ('but here's the thing...') for tension"
+  - signal: cta_comment
+    message: "End with 'Comment [WORD]' to drive engagement"
+  - signal: personal_anecdote
+    message: "Add a personal story — 'I remember when...' outperforms pure information"
+  - signal: has_hashtag
+    message: "Remove hashtags — they reduce engagement on LinkedIn"

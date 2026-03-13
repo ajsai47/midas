@@ -58,5 +58,8 @@ Issues = "https://github.com/ajsai47/midas/issues"
 [tool.setuptools.packages.find]
 include = ["midas*"]
 
+[tool.setuptools.package-data]
+midas = ["data/*.yaml", "data/*.jsonl"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,6 +1,16 @@
-# MIDAS
+```
+ ███╗   ███╗ ██╗ ██████╗   █████╗  ███████╗
+ ████╗ ████║ ██║ ██╔══██╗ ██╔══██╗ ██╔════╝
+ ██╔████╔██║ ██║ ██║  ██║ ███████║ ███████╗
+ ██║╚██╔╝██║ ██║ ██║  ██║ ██╔══██║ ╚════██║
+ ██║ ╚═╝ ██║ ██║ ██████╔╝ ██║  ██║ ███████║
+ ╚═╝     ╚═╝ ╚═╝ ╚═════╝  ╚═╝  ╚═╝ ╚══════╝
+```
 
 **MIDAS turns your LinkedIn engagement data into a personalized scoring formula, so you know if a post will perform before you hit publish.**
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 
 Analyze your past posts, extract the patterns that drive YOUR engagement, score drafts against your formula, generate new posts with AI, and close the feedback loop. Your audience is unique. Your formula should be too.
 

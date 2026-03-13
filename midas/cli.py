@@ -108,54 +108,118 @@ def score_cmd(text: str | None, file: str | None, config: str | None):
     _render_score(result)
 
 
-@main.command()
-@click.option("--dir", "-d", default=".", help="Directory to initialize in")
-def init(dir: str):
-    """Set up MIDAS in your project — guided onboarding."""
+def _find_sample(name: str) -> Path | None:
+    """Locate a bundled sample file (package data or dev examples/)."""
+    pkg_data = Path(__file__).parent / "data" / name
+    if pkg_data.exists():
+        return pkg_data
+    dev_examples = Path(__file__).parent.parent / "examples" / name
+    if dev_examples.exists():
+        return dev_examples
+    return None
+
+
+def _copy_sample_files(target: Path) -> tuple[Path | None, Path | None]:
+    """Copy sample config and data into target dir. Returns (config_path, data_path) or None if skipped."""
     import shutil
 
-    target = Path(dir)
-    target.mkdir(parents=True, exist_ok=True)
-
-    console.print(Panel(
-        "[bold]MIDAS[/bold] — Reverse-engineer your LinkedIn into a personalized scoring formula.",
-        border_style="yellow",
-    ))
-    console.print()
-
-    # Locate bundled sample files (package data or dev examples/)
-    def _find_sample(name: str) -> Path | None:
-        pkg_data = Path(__file__).parent / "data" / name
-        if pkg_data.exists():
-            return pkg_data
-        dev_examples = Path(__file__).parent.parent / "examples" / name
-        if dev_examples.exists():
-            return dev_examples
-        return None
-
-    # Copy sample config if none exists
     config_path = target / "midas_config.yaml"
+    data_path = target / "posts.jsonl"
     sample_config = _find_sample("sample_config.yaml")
+    sample_data = _find_sample("sample_data.jsonl")
+
+    created_config = None
+    created_data = None
 
     if config_path.exists():
         console.print(f"  [dim]Config already exists:[/dim] {config_path}")
+        created_config = config_path
     elif sample_config:
         shutil.copy(sample_config, config_path)
         console.print(f"  [green]Created[/green] {config_path} (sample config)")
-    else:
-        console.print("  [yellow]No sample config found. Run `midas analyze` to generate one.[/yellow]")
-
-    # Copy sample data if none exists
-    data_path = target / "posts.jsonl"
-    sample_data = _find_sample("sample_data.jsonl")
+        created_config = config_path
 
     if data_path.exists():
         console.print(f"  [dim]Data already exists:[/dim] {data_path}")
+        created_data = data_path
     elif sample_data:
         shutil.copy(sample_data, data_path)
         console.print(f"  [green]Created[/green] {data_path} (10 sample posts)")
+        created_data = data_path
+
+    return created_config, created_data
+
+
+def _detect_data_format(path: str) -> str:
+    """Auto-detect data format: 'apify' (JSON array), 'csv' (LinkedIn CSV), or 'jsonl'."""
+    filepath = Path(path)
+    suffix = filepath.suffix.lower()
+
+    if suffix == ".csv":
+        return "csv"
+
+    with open(filepath, encoding="utf-8") as f:
+        first_char = f.read(1).strip()
+
+    if first_char == "[":
+        return "apify"
+    return "jsonl"
+
+
+def _parse_data_file(path: str, fmt: str) -> list[dict]:
+    """Parse a data file into MIDAS posts based on format."""
+    from .export import parse_apify_posts, parse_linkedin_export, load_jsonl
+
+    if fmt == "apify":
+        return parse_apify_posts(path)
+    elif fmt == "csv":
+        return parse_linkedin_export(path)
+    else:
+        return load_jsonl(path)
+
+
+def _interactive_score_demo(target: Path) -> None:
+    """Prompt user to score a post interactively."""
+    config_path = target / "midas_config.yaml"
+    if not config_path.exists():
+        return
 
     console.print()
+    console.print("[bold]Let's try scoring a post![/bold]")
+    console.print("  Paste a LinkedIn post below (or press Enter to use a sample):")
+    console.print()
+
+    try:
+        text = click.prompt("", default="", prompt_suffix="  > ", show_default=False)
+    except (click.Abort, EOFError):
+        return
+
+    if not text.strip():
+        # Use a built-in sample
+        text = (
+            "I just spent 3 months building an AI agent from scratch.\n\n"
+            "Everyone said to use a framework.\n\n"
+            "But here's the thing → frameworks hide the complexity.\n\n"
+            "They don't remove it.\n\n"
+            "I learned more in those 3 months than in 2 years of using LangChain.\n\n"
+            "Here's what actually matters:\n\n"
+            "→ Prompt engineering is 80% of the work\n"
+            "→ Memory management is harder than generation\n"
+            "→ Error handling is where agents actually break\n"
+            "→ Evaluation is still an unsolved problem\n\n"
+            "The frameworks will catch up.\n\n"
+            "But understanding the fundamentals won't go out of style.\n\n"
+            "Comment AGENT if you've built from scratch too."
+        )
+        console.print("  [dim](Using sample post)[/dim]")
+
+    cfg = load_config(str(config_path))
+    result = score(text.strip(), cfg)
+    _render_score(result)
+
+
+def _print_static_next_steps(has_config: bool) -> None:
+    """Print the static next-steps text (non-interactive fallback)."""
     console.print("[bold]Next steps:[/bold]")
     console.print()
     console.print("  [bold cyan]1.[/bold cyan] Get your LinkedIn data (you need posts + engagement numbers):")
@@ -163,9 +227,7 @@ def init(dir: str):
     console.print("     [dim]https://console.apify.com/actors/RE0MriXnFhR3IgVnJ/input[/dim]")
     console.print()
     console.print("     Then convert to MIDAS format:")
-    console.print('     [dim]python3 -c "from midas.export import parse_apify_posts, save_jsonl; save_jsonl(parse_apify_posts(\'apify_dataset.json\'), \'posts.jsonl\')"[/dim]')
-    console.print()
-    console.print("     [dim]Full guide: https://github.com/ajsai47/midas/blob/main/docs/01-export-your-data.md[/dim]")
+    console.print("     [dim]midas init --data apify_dataset.json[/dim]")
     console.print()
     console.print("  [bold cyan]2.[/bold cyan] Analyze your posts to build your formula:")
     console.print("     [dim]midas analyze posts.jsonl -o midas_config.yaml[/dim]")
@@ -176,8 +238,204 @@ def init(dir: str):
     console.print("  [bold cyan]4.[/bold cyan] Validate that your formula predicts engagement:")
     console.print("     [dim]midas validate posts.jsonl --config midas_config.yaml[/dim]")
     console.print()
-    if sample_config or config_path.exists():
+    if has_config:
         console.print("  [dim]Tip: A sample config and data were created above — try steps 3-4 now to see it in action.[/dim]")
+        console.print()
+
+
+@main.command()
+@click.option("--dir", "-d", default=".", help="Directory to initialize in")
+@click.option("--data", type=click.Path(exists=True), help="Path to your LinkedIn data file (auto-detects format)")
+def init(dir: str, data: str | None):
+    """Set up MIDAS in your project — guided onboarding."""
+    from .export import save_jsonl
+    from .analyze import analyze_file, export_config
+
+    target = Path(dir)
+    target.mkdir(parents=True, exist_ok=True)
+
+    console.print(Panel(
+        "[bold]MIDAS[/bold] — Reverse-engineer your LinkedIn into a\npersonalized scoring formula.",
+        border_style="yellow",
+    ))
+    console.print()
+
+    is_interactive = sys.stdin.isatty() and data is None
+
+    # ── Path A: User provided --data flag ──────────────────────────────
+    if data:
+        fmt = _detect_data_format(data)
+        console.print(f"  Detected format: [bold]{fmt}[/bold]")
+
+        posts = _parse_data_file(data, fmt)
+        if not posts:
+            console.print("[red]No posts found in the file.[/red]")
+            sys.exit(1)
+
+        data_path = target / "posts.jsonl"
+        save_jsonl(posts, str(data_path))
+        console.print(f"  [green]Parsed {len(posts)} posts[/green] → {data_path}")
+
+        if fmt == "csv":
+            console.print()
+            console.print("  [yellow]Note:[/yellow] LinkedIn CSV exports don't include engagement metrics.")
+            console.print("  You'll need to add reactions/comments/reposts manually or via the LinkedIn API.")
+            console.print()
+
+        # Analyze
+        console.print()
+        console.print("[bold]Analyzing your posts...[/bold]")
+        result = analyze_file(str(data_path))
+        sig_count = sum(1 for s in result.signals if s.significant)
+
+        config_path = target / "midas_config.yaml"
+        export_config(result, str(config_path))
+
+        console.print(f"  Posts analyzed: [bold]{result.total_posts}[/bold]")
+        console.print(f"  Signals found: [bold]{len(result.signals)}[/bold] ({sig_count} statistically significant)")
+        console.print(f"  [green]Config saved to {config_path}[/green]")
+
+        # Validate
+        console.print()
+        console.print("[bold]Validating your formula...[/bold]")
+        from .validate import validate as validate_fn
+        import json as _json
+
+        loaded_posts = []
+        with open(data_path) as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    loaded_posts.append(_json.loads(line))
+
+        if len(loaded_posts) >= 5:
+            cfg = load_config(str(config_path))
+            val_result = validate_fn(loaded_posts, cfg)
+
+            color = "green" if val_result.spearman_rho > 0.3 else "yellow" if val_result.spearman_rho > 0 else "red"
+            strength = val_result.correlation_strength.upper()
+            sig_str = ", SIGNIFICANT" if val_result.is_significant else ""
+            console.print(f"  Spearman rho: [{color}]{val_result.spearman_rho:+.2f}[/{color}] ({strength}{sig_str})")
+
+            if val_result.spearman_rho > 0 and val_result.is_significant:
+                console.print("  [green]Your formula predicts engagement![/green]")
+        else:
+            console.print("  [dim]Not enough posts to validate (need at least 5).[/dim]")
+
+        console.print()
+        console.print("[bold]You're all set.[/bold] Try scoring a draft:")
+        console.print('  [dim]midas score "Your draft here..."[/dim]')
+        console.print()
+        return
+
+    # ── Path B: Non-interactive (piped stdin / CI) ─────────────────────
+    if not is_interactive:
+        created_config, _ = _copy_sample_files(target)
+        console.print()
+        _print_static_next_steps(created_config is not None)
+        return
+
+    # ── Path C: Interactive onboarding ─────────────────────────────────
+    has_data = click.confirm("Do you have your LinkedIn post data ready?", default=False)
+
+    if not has_data:
+        # No data — set up with samples and demo scoring
+        console.print()
+        console.print("  No worries! Here's how to get it:")
+        console.print()
+        console.print("  [bold cyan]1.[/bold cyan] Go to the Apify LinkedIn Post Scraper (free tier available):")
+        console.print("     [dim]https://console.apify.com/actors/RE0MriXnFhR3IgVnJ/input[/dim]")
+        console.print()
+        console.print("  [bold cyan]2.[/bold cyan] Run the scraper on your profile")
+        console.print()
+        console.print("  [bold cyan]3.[/bold cyan] Download the JSON dataset and save it here, then run:")
+        console.print("     [dim]midas init --data apify_dataset.json[/dim]")
+        console.print()
+        console.print("  In the meantime, let's set up with sample data so you can see how MIDAS works.")
+        console.print()
+
+        _copy_sample_files(target)
+        _interactive_score_demo(target)
+
+        console.print("  Your formula is working. Once you have your real data:")
+        console.print("    [dim]midas init --data your_posts.json[/dim]")
+        console.print()
+    else:
+        # User has data — walk them through import
+        console.print()
+        fmt_choice = click.prompt(
+            "What format is your data in?\n"
+            "  [1] Apify JSON export\n"
+            "  [2] LinkedIn CSV export (Settings → Data privacy)\n"
+            "  [3] JSONL (already in MIDAS format)\n"
+            "  Choose",
+            type=click.Choice(["1", "2", "3"]),
+            show_choices=False,
+        )
+
+        fmt_map = {"1": "apify", "2": "csv", "3": "jsonl"}
+        fmt = fmt_map[fmt_choice]
+
+        file_path = click.prompt("\nPath to your data file", type=click.Path(exists=True))
+
+        posts = _parse_data_file(file_path, fmt)
+        if not posts:
+            console.print("[red]No posts found in the file.[/red]")
+            sys.exit(1)
+
+        data_path = target / "posts.jsonl"
+        save_jsonl(posts, str(data_path))
+        console.print(f"  [green]Parsed {len(posts)} posts[/green] → {data_path}")
+
+        if fmt == "csv":
+            console.print()
+            console.print("  [yellow]Note:[/yellow] LinkedIn CSV exports don't include engagement metrics.")
+            console.print("  You'll need to add reactions/comments/reposts manually or via the LinkedIn API.")
+            console.print()
+
+        # Analyze
+        console.print()
+        console.print("[bold]Analyzing your posts...[/bold]")
+        result = analyze_file(str(data_path))
+        sig_count = sum(1 for s in result.signals if s.significant)
+
+        config_path = target / "midas_config.yaml"
+        export_config(result, str(config_path))
+
+        console.print(f"  Posts analyzed: [bold]{result.total_posts}[/bold]")
+        console.print(f"  Signals found: [bold]{len(result.signals)}[/bold] ({sig_count} statistically significant)")
+        console.print(f"  [green]Config saved to {config_path}[/green]")
+
+        # Validate
+        console.print()
+        console.print("[bold]Validating your formula...[/bold]")
+        from .validate import validate as validate_fn
+        import json as _json
+
+        loaded_posts = []
+        with open(data_path) as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    loaded_posts.append(_json.loads(line))
+
+        if len(loaded_posts) >= 5:
+            cfg = load_config(str(config_path))
+            val_result = validate_fn(loaded_posts, cfg)
+
+            color = "green" if val_result.spearman_rho > 0.3 else "yellow" if val_result.spearman_rho > 0 else "red"
+            strength = val_result.correlation_strength.upper()
+            sig_str = ", SIGNIFICANT" if val_result.is_significant else ""
+            console.print(f"  Spearman rho: [{color}]{val_result.spearman_rho:+.2f}[/{color}] ({strength}{sig_str})")
+
+            if val_result.spearman_rho > 0 and val_result.is_significant:
+                console.print("  [green]Your formula predicts engagement![/green]")
+        else:
+            console.print("  [dim]Not enough posts to validate (need at least 5).[/dim]")
+
+        console.print()
+        console.print("[bold]You're all set.[/bold] Try scoring a draft:")
+        console.print('  [dim]midas score "Your draft here..."[/dim]')
         console.print()
 
 
@@ -263,6 +521,13 @@ def validate(data_path: str, config: str | None, holdout: int, min_frequency: fl
 
     if holdout > 0:
         # K-fold cross-validation
+        min_posts = holdout * 5
+        if len(posts) < min_posts:
+            console.print(
+                f"[red]Need at least {min_posts} posts for {holdout}-fold CV. "
+                f"Got {len(posts)}.[/red]"
+            )
+            sys.exit(1)
         console.print(f"  Running {holdout}-fold holdout validation...\n")
         cv_result = holdout_validate(posts, n_splits=holdout, min_frequency=min_frequency)
 

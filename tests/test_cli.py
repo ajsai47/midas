@@ -159,6 +159,67 @@ class TestInitCommand:
         assert result.exit_code == 0
         assert "already exists" in result.output
 
+    def test_init_with_data_jsonl(self, runner, tmp_dir):
+        """--data flag with JSONL file should parse, analyze, and validate."""
+        result = runner.invoke(main, [
+            "init",
+            "--dir", str(tmp_dir),
+            "--data", str(SAMPLE_DATA),
+        ])
+        assert result.exit_code == 0
+        assert "Parsed 10 posts" in result.output
+        assert "Analyzing" in result.output
+        assert "Validating" in result.output
+        assert "You're all set" in result.output
+        assert (tmp_dir / "posts.jsonl").exists()
+        assert (tmp_dir / "midas_config.yaml").exists()
+
+    def test_init_with_data_apify_json(self, runner, tmp_dir):
+        """--data flag with JSON array should auto-detect as Apify format."""
+        apify_file = tmp_dir / "apify.json"
+        apify_file.write_text(json.dumps([
+            {"text": "Test post one", "numLikes": 10, "numComments": 2, "numShares": 1, "postedAt": "2026-01-15"},
+            {"text": "Test post two", "numLikes": 20, "numComments": 5, "numShares": 3, "postedAt": "2026-01-20"},
+        ]))
+        result = runner.invoke(main, [
+            "init",
+            "--dir", str(tmp_dir),
+            "--data", str(apify_file),
+        ])
+        assert result.exit_code == 0
+        assert "Detected format: apify" in result.output
+        assert "Parsed 2 posts" in result.output
+
+    def test_init_with_data_csv(self, runner, tmp_dir):
+        """--data flag with CSV should auto-detect as LinkedIn export."""
+        csv_file = tmp_dir / "shares.csv"
+        csv_file.write_text(
+            "Date,ShareCommentary,MediaUrl\n"
+            "2026/01/15,My first LinkedIn post,\n"
+            "2026/01/20,Another great post,https://example.com/img.jpg\n"
+        )
+        result = runner.invoke(main, [
+            "init",
+            "--dir", str(tmp_dir),
+            "--data", str(csv_file),
+        ])
+        assert result.exit_code == 0
+        assert "Detected format: csv" in result.output
+        assert "Parsed 2 posts" in result.output
+        assert "engagement metrics" in result.output
+
+    def test_init_noninteractive_fallback(self, runner, tmp_dir):
+        """Non-interactive (piped stdin) should create sample files and print steps."""
+        result = runner.invoke(main, [
+            "init",
+            "--dir", str(tmp_dir),
+        ], input="")
+        assert result.exit_code == 0
+        assert "MIDAS" in result.output
+        assert "Next steps" in result.output
+        assert (tmp_dir / "midas_config.yaml").exists()
+        assert (tmp_dir / "posts.jsonl").exists()
+
 
 class TestFeedbackCommand:
     def test_feedback_log_edit(self, runner, tmp_dir):

@@ -23,7 +23,7 @@ import re
 import statistics
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from .config import MidasConfig, PenaltyDef, ScoreTier, SignalDef, save_config
 
@@ -87,7 +87,7 @@ def _build_candidates(hook_max_chars: int) -> list[_CandidateSignal]:
         description="Short punchy hook under 50 chars creates curiosity gap",
         scope="hook",
         field_name="hook_length",
-        min_value=0,  # special: triggers when < 50
+        min_value=50,  # used as max_value threshold in config
         detect=lambda text, hook, close, stats: len(hook) < 50 and len(hook) > 0,
     ))
 
@@ -630,6 +630,9 @@ def _build_config(
         if cand is None:
             continue
 
+        # hook_short_teaser uses a "less-than" threshold (max_value),
+        # while other field-based signals use "greater-or-equal" (min_value).
+        is_max_value = sa.name == "hook_short_teaser"
         signal_defs.append(SignalDef(
             name=sa.name,
             weight=sa.weight,
@@ -637,7 +640,8 @@ def _build_config(
             regex=cand.regex,
             keywords=cand.keywords,
             scope=cand.scope,
-            min_value=cand.min_value,
+            min_value=None if is_max_value else cand.min_value,
+            max_value=cand.min_value if is_max_value else None,
             field=cand.field_name,
         ))
 

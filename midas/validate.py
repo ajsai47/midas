@@ -22,7 +22,6 @@ import random
 import statistics
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 from .analyze import _engagement, _norm_cdf, analyze_posts
 from .config import MidasConfig, load_config

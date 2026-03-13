@@ -170,8 +170,8 @@ python training/train_dpo.py dpo_training_data.jsonl \
   --sft-checkpoint ./checkpoints/sft-v1 \
   --output ./checkpoints/dpo-v2
 
-# Backtest the new config against historical posts
-midas backtest posts_updated.jsonl --config my_config_v3.yaml
+# Validate the new config against historical posts
+midas validate posts_updated.jsonl --config my_config_v3.yaml
 ```
 
 ## Python API
@@ -186,8 +186,8 @@ config = load_config("my_config.yaml")
 # Returns a FeedbackEntry with: original_text, edited_text, original_score,
 # edited_score, signals_added, signals_removed, timestamp
 entry = log_edit(
-    original_text="The AI generated this...",
-    edited_text="You rewrote it to this...",
+    original="The AI generated this...",
+    edited="You rewrote it to this...",
     config=config,
     log_path="midas_feedback.jsonl",
 )

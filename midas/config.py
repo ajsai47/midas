@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import yaml
 
@@ -22,13 +22,17 @@ class SignalDef:
     keywords: list[str] | None = None
     scope: str = "full"  # "full", "hook", "close"
     min_value: float | None = None  # For numeric checks (e.g., char_count >= 1000)
+    max_value: float | None = None  # For "less-than" checks (e.g., hook_length < 50)
     field: str | None = None  # Which numeric field to check
 
     def matches(self, text: str, *, hook: str = "", close: str = "", stats: dict | None = None) -> bool:
         target = {"full": text, "hook": hook, "close": close}.get(self.scope, text)
 
-        if self.field and self.min_value is not None and stats:
-            return stats.get(self.field, 0) >= self.min_value
+        if self.field and stats:
+            if self.max_value is not None:
+                return stats.get(self.field, 0) < self.max_value
+            if self.min_value is not None:
+                return stats.get(self.field, 0) >= self.min_value
 
         if self.regex:
             return bool(re.search(self.regex, target, re.IGNORECASE))
@@ -100,6 +104,7 @@ def _parse_signal(data: dict) -> SignalDef:
         keywords=data.get("keywords"),
         scope=data.get("scope", "full"),
         min_value=data.get("min_value"),
+        max_value=data.get("max_value"),
         field=data.get("field"),
     )
 
@@ -169,6 +174,8 @@ def save_config(config: MidasConfig, path: str | Path) -> None:
             entry["scope"] = s.scope
         if s.min_value is not None:
             entry["min_value"] = s.min_value
+        if s.max_value is not None:
+            entry["max_value"] = s.max_value
         if s.field:
             entry["field"] = s.field
         data["signals"].append(entry)

@@ -89,31 +89,20 @@ def normalize_post(raw: dict) -> dict:
     )
     text = str(text).strip()
 
-    # --- Reactions ---
-    reactions = (
-        raw.get("reactions")
-        or raw.get("likes")
-        or raw.get("reaction_count")
-        or raw.get("like_count")
-        or 0
-    )
+    # --- Reactions (use explicit None checks so 0 is preserved) ---
+    reactions = _first_int(raw, [
+        "reactions", "likes", "reaction_count", "like_count",
+    ])
 
     # --- Comments ---
-    comments = (
-        raw.get("comments")
-        or raw.get("comment_count")
-        or raw.get("num_comments")
-        or 0
-    )
+    comments = _first_int(raw, [
+        "comments", "comment_count", "num_comments",
+    ])
 
     # --- Reposts ---
-    reposts = (
-        raw.get("reposts")
-        or raw.get("shares")
-        or raw.get("share_count")
-        or raw.get("repost_count")
-        or 0
-    )
+    reposts = _first_int(raw, [
+        "reposts", "shares", "share_count", "repost_count",
+    ])
 
     # --- Date ---
     date_val = (

@@ -26,7 +26,7 @@ signals:
     description: Short punchy hook under 50 chars creates curiosity gap
     scope: hook
     field: hook_length
-    min_value: 0  # Special: triggers when hook_length < 50 (handled in scorer)
+    max_value: 50  # Triggers when hook_length < 50
 
   - name: hook_personal_i
     weight: 90
@@ -89,13 +89,13 @@ signals:
   # Topic signals — customize these for YOUR niche
   - name: topic_primary
     weight: 200
-    description: "Your primary topic — replace with YOUR top-performing topic"
-    keywords: ["REPLACE_WITH_YOUR_TOPIC"]
+    description: "Posts about your primary topic — replace keywords with YOUR niche"
+    keywords: ["leadership", "management", "team building"]
 
   - name: topic_secondary
     weight: 75
-    description: "Your secondary topic — replace with YOUR second topic"
-    keywords: ["REPLACE_WITH_YOUR_TOPIC"]
+    description: "Posts about your secondary topic — replace keywords with YOUR second niche"
+    keywords: ["career growth", "career advice", "job search"]
 
   # CTA signals
   - name: cta_comment

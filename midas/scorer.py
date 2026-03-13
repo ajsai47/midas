@@ -64,14 +64,6 @@ def score(text: str, config: MidasConfig) -> ScoreResult:
     unmatched_signals: list[str] = []
 
     for sig in config.signals:
-        # Special case: hook_short_teaser checks < threshold, not >=
-        if sig.name == "hook_short_teaser":
-            if stats.get("hook_length", 999) < 50:
-                matched_signals[sig.name] = sig.weight
-            else:
-                unmatched_signals.append(sig.name)
-            continue
-
         if sig.matches(text, hook=hook, close=close, stats=stats):
             matched_signals[sig.name] = sig.weight
         else:

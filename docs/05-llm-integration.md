@@ -228,7 +228,7 @@ print(result.score_result)
 2. **Score after editing.** Run `midas score` on your final version to make sure
    your edits did not drop key signals.
 3. **Iterate on the prompt.** If the LLM keeps producing a style you dislike,
-   customize the system prompt template in `~/.midas/prompt_template.txt`.
+   adjust your config's signals and suggestions to steer the output.
 4. **Combine with rewrite.** Write a rough draft, score it, then use
    `midas rewrite` to optimize structure while keeping your voice.
 

@@ -23,18 +23,17 @@ Options:
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--output` / `-o` | `midas_config.yaml` | Output config path |
-| `--metric` | `reactions` | Engagement metric: `reactions`, `comments`, `reposts`, or `total` |
-| `--min-frequency` | `0.05` | Minimum signal frequency to include (5%) |
-| `--hook-chars` | `100` | Characters to consider as the "hook" |
+| `--min-frequency` | `0.02` | Minimum signal frequency to include (2%) |
+| `--hook-max-chars` | `100` | Characters to consider as the "hook" |
 
-The `total` metric combines reactions + comments + reposts (unweighted sum).
+Engagement is always computed as a weighted sum: `reactions + comments*2 + reposts*3`.
 
 ## Understanding the Output
 
 The analyzer prints a table like this:
 
 ```
-Signal Analysis — 187 posts, metric: reactions
+MIDAS Signal Analysis
 ==================================================
 Signal                   Lift   Freq   Suggested Weight
 ---------------------------------------------------------
@@ -72,7 +71,7 @@ Lifts above 1.0 become positive signals. Lifts below 1.0 become penalties.
 
 **Frequency** is how often the signal appears in your dataset. A signal with 3.0x
 lift but 2% frequency might be noise. MIDAS filters out signals below
-`--min-frequency` (default 5%) to avoid overfitting to rare patterns.
+`--min-frequency` (default 2%) to avoid overfitting to rare patterns.
 
 **Suggested Weight** is a scaled version of lift, normalized so that your highest-
 impact signal gets the largest weight. These are starting points -- you can and
@@ -131,21 +130,26 @@ The auto-generated weights are a starting point. Reasons to adjust:
    over engagement-bait signals, even if the latter has higher lift.
 2. **Sample size concerns.** A signal with 3.0x lift from 5 posts is less reliable
    than 1.5x lift from 80 posts.
-3. **Goal alignment.** If you care about comments more than reactions, re-run with
-   `--metric comments` and blend the weights.
+3. **Goal alignment.** Engagement is computed as `reactions + comments*2 + reposts*3`,
+   which already weights deeper interactions higher. If you want to further emphasize
+   certain interactions, adjust the signal weights in the YAML directly.
 
 Edit the output YAML directly, or re-run with different parameters.
 
 ## Programmatic Usage
 
 ```python
-from midas.analyze import analyze_posts, load_posts
+from midas.export import load_jsonl
+from midas.analyze import analyze_posts, export_config
 
-posts = load_posts("posts.jsonl")
-results = analyze_posts(posts, metric="reactions", min_frequency=0.05)
+posts = load_jsonl("posts.jsonl")
+result = analyze_posts(posts, hook_max_chars=100, close_lines=3, min_frequency=0.02)
 
-for signal in results.signals:
+for signal in result.signals:
     print(f"{signal.name}: {signal.lift:.2f}x lift, {signal.frequency:.0%} freq")
+
+# Save the derived config to YAML
+export_config(result, "my_config.yaml")
 ```
 
 ## Next Step

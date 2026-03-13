@@ -21,30 +21,35 @@ Without feedback, the system is static. With it:
 After MIDAS generates or rewrites a draft, log your changes:
 
 ```bash
-# Interactive: shows the generated draft, opens your editor, saves the diff
-midas feedback
+# Provide both versions
+midas feedback --original generated.txt --edited final.txt
 
-# Direct: provide both versions
-midas feedback --before generated.txt --after final.txt
-
-# With metadata
-midas feedback --before generated.txt --after final.txt \
-  --topic "open source lessons" \
-  --notes "Removed the numbered list, added personal story about GitHub stars"
+# With a custom log path and config
+midas feedback --original generated.txt --edited final.txt \
+  --log my_feedback.jsonl --config my_config.yaml
 ```
 
-The feedback is stored in `~/.midas/feedback.jsonl`:
+Options:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--original` / `-o` | (required) | Path to the original/generated draft |
+| `--edited` / `-e` | (required) | Path to your edited version |
+| `--log` | `midas_feedback.jsonl` | Path to the feedback log file |
+| `--config` | `midas_config.yaml` | Your scoring config |
+
+The feedback is stored in `midas_feedback.jsonl` (default) or the path you
+specify with `--log`:
 
 ```json
 {
   "timestamp": "2026-03-12T14:30:00Z",
-  "before": "The generated draft text...",
-  "after": "Your edited final version...",
-  "before_score": 680,
-  "after_score": 740,
-  "topic": "open source lessons",
-  "notes": "Removed the numbered list, added personal story",
-  "config": "my_config.yaml"
+  "original_text": "The generated draft text...",
+  "edited_text": "Your edited final version...",
+  "original_score": 680,
+  "edited_score": 740,
+  "signals_added": ["personal_anecdote", "has_pivot"],
+  "signals_removed": ["hook_question", "has_hashtag"]
 }
 ```
 
@@ -52,6 +57,9 @@ The feedback is stored in `~/.midas/feedback.jsonl`:
 
 ```bash
 midas feedback --stats
+
+# Or with a custom log path
+midas feedback --stats --log my_feedback.jsonl
 ```
 
 Output:
@@ -59,17 +67,7 @@ Output:
 ```
 Feedback Summary — 47 entries
 ==============================
-Average score change:  +85 (before: 590 → after: 675)
-Score improved:        38/47 (81%)
-Score decreased:       6/47 (13%)
-Score unchanged:       3/47 (6%)
-
-Most common edits:
-  Removed hashtags             18 times
-  Shortened hook               14 times
-  Added personal anecdote      12 times
-  Changed CTA                  11 times
-  Removed numbered list         8 times
+Average score improvement:  +85
 
 Signals you keep adding:
   personal_anecdote            12 times (+140 each)
@@ -85,23 +83,15 @@ This tells you two things:
 1. Which signals the AI keeps missing (upweight them or improve detection).
 2. Which patterns you consistently reject (the model needs DPO training on these).
 
-## Logging Actual Performance
-
-After posting, record the real engagement to validate your formula:
-
-```bash
-midas feedback --post-id 2026-03-12-open-source \
-  --reactions 156 --comments 23 --reposts 8
-```
-
-This links the feedback entry to actual performance data, enabling backtesting.
-
 ## Exporting to DPO Format
 
 Once you have 30+ feedback entries, export them for DPO training:
 
 ```bash
-midas prepare-dpo ~/.midas/feedback.jsonl --output dpo_data.jsonl
+midas feedback --export-dpo dpo_data.jsonl
+
+# Or with a custom log path
+midas feedback --export-dpo dpo_data.jsonl --log my_feedback.jsonl
 ```
 
 Each entry becomes a preference pair:
@@ -114,25 +104,19 @@ Each entry becomes a preference pair:
 }
 ```
 
-Entries where the after-score is lower than the before-score are flipped (the
+Entries where the edited score is lower than the original score are flipped (the
 original becomes the chosen output). MIDAS assumes score improvements indicate
 genuine preferences, but score decreases might mean you prioritized voice over
-formula -- so those pairs are excluded by default. Override with `--include-all`.
+formula -- so those pairs are excluded by default.
+
+The command returns the number of pairs exported.
 
 ## Updating Your Config
 
-Your feedback data can also improve the scoring config itself:
-
-```bash
-midas recalibrate --feedback ~/.midas/feedback.jsonl \
-  --posts posts.jsonl \
-  --config my_config.yaml \
-  --output my_config_v2.yaml
-```
-
-This re-runs signal analysis on the combined dataset (original posts plus actual
-performance of new posts) and adjusts weights. Signals you consistently add
-manually get upweighted. Signals the AI over-relies on get downweighted.
+Your feedback stats reveal which signals to adjust. If you keep adding a signal
+manually, consider upweighting it. If the model over-relies on a signal you
+keep removing, downweight it. Re-run `midas analyze` with updated posts to
+regenerate your config with fresh engagement data.
 
 ## The Virtuous Cycle
 
@@ -179,8 +163,10 @@ Set up a weekly routine:
 # Re-analyze with fresh data
 midas analyze posts_updated.jsonl --output my_config_v3.yaml
 
-# If you have 50+ new feedback entries, retrain
-midas train-dpo dpo_data.jsonl \
+# If you have 50+ new feedback entries, export and retrain
+midas feedback --export-dpo dpo_data.jsonl
+python training/prepare_dpo.py dpo_data.jsonl --output dpo_training_data.jsonl
+python training/train_dpo.py dpo_training_data.jsonl \
   --sft-checkpoint ./checkpoints/sft-v1 \
   --output ./checkpoints/dpo-v2
 
@@ -191,26 +177,38 @@ midas backtest posts_updated.jsonl --config my_config_v3.yaml
 ## Python API
 
 ```python
-from midas.feedback import log_feedback, get_stats, export_dpo
+from midas.config import load_config
+from midas.feedback import log_edit, get_stats, export_dpo
+
+config = load_config("my_config.yaml")
 
 # Log an edit
-log_feedback(
-    before="The AI generated this...",
-    after="You rewrote it to this...",
-    topic="open source lessons",
+# Returns a FeedbackEntry with: original_text, edited_text, original_score,
+# edited_score, signals_added, signals_removed, timestamp
+entry = log_edit(
+    original_text="The AI generated this...",
+    edited_text="You rewrote it to this...",
+    config=config,
+    log_path="midas_feedback.jsonl",
 )
+print(f"Score: {entry.original_score} → {entry.edited_score}")
 
 # Get aggregate stats
-stats = get_stats()
-print(f"Average score improvement: {stats.avg_score_change:+.0f}")
-print(f"Most added signal: {stats.most_added_signals[0]}")
+# Returns FeedbackStats with: total_edits, avg_score_improvement,
+# most_commonly_added (list of tuples), most_commonly_removed (list of tuples)
+stats = get_stats("midas_feedback.jsonl")
+print(f"Total edits: {stats.total_edits}")
+print(f"Average score improvement: {stats.avg_score_improvement:+.0f}")
+print(f"Most added signal: {stats.most_commonly_added[0]}")
+print(f"Most removed signal: {stats.most_commonly_removed[0]}")
 
-# Export for DPO
-export_dpo(
-    feedback_path="~/.midas/feedback.jsonl",
+# Export for DPO training
+# Returns int (number of pairs exported)
+n_pairs = export_dpo(
+    log_path="midas_feedback.jsonl",
     output_path="dpo_data.jsonl",
-    min_score_improvement=20,
 )
+print(f"Exported {n_pairs} DPO pairs")
 ```
 
 ## Tips

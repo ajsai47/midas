@@ -63,10 +63,11 @@ Your posts (200+)
 
 ## Step 1: Prepare SFT Data
 
-Filter your posts to the top performers:
+Filter your posts to the top performers. The training scripts are standalone files
+in the `training/` directory, run directly with Python:
 
 ```bash
-midas prepare-sft posts.jsonl --output sft_data.jsonl \
+python training/prepare_sft.py posts.jsonl --output sft_data.jsonl \
   --top-percentile 25 \
   --min-chars 200
 ```
@@ -94,7 +95,7 @@ pip install "midas-linkedin[training]"
 Run training:
 
 ```bash
-midas train-sft sft_data.jsonl \
+python training/train_sft.py sft_data.jsonl \
   --base-model Qwen/Qwen2.5-7B-Instruct \
   --output ./checkpoints/sft-v1 \
   --epochs 3 \
@@ -122,10 +123,17 @@ top of the base model. This keeps VRAM requirements manageable.
 ## Step 3: Prepare DPO Data
 
 After using the fine-tuned model and logging your edits (see
-[Step 6](07-feedback-loop.md)):
+[Step 6](07-feedback-loop.md)), you can export DPO pairs from your feedback log
+using the MIDAS CLI:
 
 ```bash
-midas prepare-dpo feedback.jsonl --output dpo_data.jsonl
+midas feedback --export-dpo dpo_data.jsonl --log feedback.jsonl
+```
+
+Then prepare the data for training:
+
+```bash
+python training/prepare_dpo.py dpo_data.jsonl --output dpo_training_data.jsonl
 ```
 
 Each feedback entry becomes a DPO pair:
@@ -141,7 +149,7 @@ Each feedback entry becomes a DPO pair:
 ## Step 4: Run DPO Training
 
 ```bash
-midas train-dpo dpo_data.jsonl \
+python training/train_dpo.py dpo_training_data.jsonl \
   --base-model Qwen/Qwen2.5-7B-Instruct \
   --sft-checkpoint ./checkpoints/sft-v1 \
   --output ./checkpoints/dpo-v1 \
@@ -176,12 +184,8 @@ For a 7B model, a single RTX 4090 (24 GB) handles SFT. DPO needs an A100 40GB
 or gradient checkpointing on a 4090.
 
 Alternatively, use a managed fine-tuning API (OpenAI, Together, Fireworks) and
-skip infrastructure management. MIDAS exports data in their expected formats:
-
-```bash
-midas export-sft sft_data.jsonl --format openai --output openai_sft.jsonl
-midas export-dpo dpo_data.jsonl --format together --output together_dpo.jsonl
-```
+skip infrastructure management. The training scripts can export data in their
+expected formats -- see the `--format` flag on each prepare script.
 
 ## Step 5: Use the Fine-Tuned Model
 
@@ -212,36 +216,42 @@ the model captures your voice and style, the scorer catches structural patterns.
 The biggest gain is not the score -- it is edit time. A DPO-trained model produces
 drafts that need minimal editing because it has learned your corrections.
 
-## Python API
+## Running the Scripts Programmatically
+
+The training scripts are standalone and not importable as a `midas.training`
+package. Run them directly from the command line as shown above, or invoke them
+as subprocesses:
 
 ```python
-from midas.training import prepare_sft, prepare_dpo, train_sft, train_dpo
+import subprocess
 
-# Prepare data
-sft_data = prepare_sft("posts.jsonl", top_percentile=25, min_chars=200)
-sft_data.save("sft_data.jsonl")
+# Prepare SFT data
+subprocess.run(["python", "training/prepare_sft.py", "posts.jsonl",
+                 "--output", "sft_data.jsonl",
+                 "--top-percentile", "25",
+                 "--min-chars", "200"], check=True)
 
 # Train SFT
-train_sft(
-    data_path="sft_data.jsonl",
-    base_model="Qwen/Qwen2.5-7B-Instruct",
-    output_dir="./checkpoints/sft-v1",
-    epochs=3,
-    lora_rank=32,
-)
+subprocess.run(["python", "training/train_sft.py", "sft_data.jsonl",
+                 "--base-model", "Qwen/Qwen2.5-7B-Instruct",
+                 "--output", "./checkpoints/sft-v1",
+                 "--epochs", "3",
+                 "--lora-rank", "32"], check=True)
 
-# After collecting feedback...
-dpo_data = prepare_dpo("feedback.jsonl")
-dpo_data.save("dpo_data.jsonl")
+# Export DPO pairs from feedback log (uses the midas CLI)
+subprocess.run(["midas", "feedback", "--export-dpo", "dpo_data.jsonl",
+                 "--log", "feedback.jsonl"], check=True)
+
+# Prepare DPO training data
+subprocess.run(["python", "training/prepare_dpo.py", "dpo_data.jsonl",
+                 "--output", "dpo_training_data.jsonl"], check=True)
 
 # Train DPO
-train_dpo(
-    data_path="dpo_data.jsonl",
-    base_model="Qwen/Qwen2.5-7B-Instruct",
-    sft_checkpoint="./checkpoints/sft-v1",
-    output_dir="./checkpoints/dpo-v1",
-    beta=0.1,
-)
+subprocess.run(["python", "training/train_dpo.py", "dpo_training_data.jsonl",
+                 "--base-model", "Qwen/Qwen2.5-7B-Instruct",
+                 "--sft-checkpoint", "./checkpoints/sft-v1",
+                 "--output", "./checkpoints/dpo-v1",
+                 "--beta", "0.1"], check=True)
 ```
 
 ## Next Step

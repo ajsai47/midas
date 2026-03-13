@@ -344,14 +344,6 @@ def main(argv: list[str] | None = None) -> None:
     print(f"  Train: {len(train)} pairs -> {train_path}")
     print(f"  Eval:  {len(eval_)} pairs -> {eval_path}")
 
-    # Compute avg engagement gap
-    chosen_engs = []
-    rejected_engs = []
-    for pair in train + eval_:
-        # We can't directly read engagement from the pair (it's text only),
-        # but we can count the ratio of pairs per topic from the instruction.
-        pass
-
     print(f"\nConfig used:")
     print(f"  min_engagement_ratio: {args.min_engagement_ratio}x")
     print(f"  min_chosen_reactions: {args.min_chosen_reactions}")
